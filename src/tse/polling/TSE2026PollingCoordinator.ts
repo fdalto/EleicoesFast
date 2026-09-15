@@ -1,13 +1,103 @@
 import {ElectionOffice} from '../../election/normalized/ElectionOffice';
 import type {ProviderResult} from '../providers/TSEElectionProvider';
-import {TSE2026Provider} from '../providers/TSE2026Provider';
-type Kind='federal'|'state';
+import type {TSE2026Provider} from '../providers/TSE2026Provider';
+
+type Kind = 'federal' | 'state';
+type PollingProvider = Pick<TSE2026Provider, 'getEA14' | 'getEA15' | 'getNationalResult' | 'getStateResult' | 'getMunicipalityResult'>;
 export interface PollingCycleReport {checkedAt:string;changedStates:string[];changedMunicipalities:string[];updatedResults:number;errors:string[]}
+export interface PollingCoordinatorOptions {
+  federalOffices?: ElectionOffice[];
+  stateOffices?: ElectionOffice[];
+  onActivity?: (message:string) => void;
+}
+
 export class TSE2026PollingCoordinator {
-  private stateVersions=new Map<string,string>();private municipalityVersions=new Map<string,string>();
-  constructor(private provider:TSE2026Provider,private onResult?:(result:ProviderResult)=>Promise<void>|void){}
-  private changed(map:Map<string,string>,key:string,value:string){const previous=map.get(key);map.set(key,value);return previous!==undefined&&previous!==value}
-  async runCycle():Promise<PollingCycleReport>{const report:PollingCycleReport={checkedAt:new Date().toISOString(),changedStates:[],changedMunicipalities:[],updatedResults:0,errors:[]};const monitor=async(kind:Kind)=>{try{const ea14=await this.provider.getEA14(kind);for(const state of ea14.states){const version=state.version??state.generatedAt??JSON.stringify(state.raw),key=`${kind}:${state.uf}`;if(!this.changed(this.stateVersions,key,version))continue;report.changedStates.push(key);await this.updateState(kind,state.uf,report)}}catch(e){report.errors.push(e instanceof Error?e.message:String(e))}};await Promise.all([monitor('federal'),monitor('state')]);return report}
-  private async save(job:()=>Promise<ProviderResult>,report:PollingCycleReport){try{const result=await job();await this.onResult?.(result);report.updatedResults++}catch(e){report.errors.push(e instanceof Error?e.message:String(e))}}
-  private async updateState(kind:Kind,uf:string,report:PollingCycleReport){if(kind==='federal'){await Promise.all([this.save(()=>this.provider.getNationalResult(ElectionOffice.PRESIDENT),report),this.save(()=>this.provider.getStateResult(uf,ElectionOffice.PRESIDENT),report)])}else await Promise.all([this.save(()=>this.provider.getStateResult(uf,ElectionOffice.GOVERNOR),report),this.save(()=>this.provider.getStateResult(uf,ElectionOffice.SENATOR),report)]);try{const ea15=await this.provider.getEA15(uf,kind);for(const municipality of ea15.municipalities){const version=municipality.version??municipality.generatedAt??JSON.stringify(municipality.raw),key=`${kind}:${uf}:${municipality.code}`;if(!this.changed(this.municipalityVersions,key,version))continue;report.changedMunicipalities.push(key);const offices=kind==='federal'?[ElectionOffice.PRESIDENT]:[ElectionOffice.GOVERNOR,ElectionOffice.SENATOR];await Promise.all(offices.map(office=>this.save(()=>this.provider.getMunicipalityResult(uf,municipality.code,office),report)))}}catch(e){report.errors.push(e instanceof Error?e.message:String(e))}}
+  private stateVersions = new Map<string, string>();
+  private municipalityVersions = new Map<string, string>();
+  private initialized = new Set<Kind>();
+  private inFlight: Promise<PollingCycleReport> | null = null;
+
+  constructor(
+    private provider: PollingProvider,
+    private onResult?: (result:ProviderResult) => Promise<void> | void,
+    private options: PollingCoordinatorOptions = {},
+  ) {}
+
+  runCycle(): Promise<PollingCycleReport> {
+    if (this.inFlight) return this.inFlight;
+    this.inFlight = this.executeCycle().finally(() => { this.inFlight = null; });
+    return this.inFlight;
+  }
+
+  private async executeCycle(): Promise<PollingCycleReport> {
+    const report: PollingCycleReport = {checkedAt:new Date().toISOString(),changedStates:[],changedMunicipalities:[],updatedResults:0,errors:[]};
+    await Promise.all((['federal', 'state'] as const).map(kind => this.monitor(kind, report)));
+    return report;
+  }
+
+  private async monitor(kind: Kind, report: PollingCycleReport) {
+    try {
+      const ea14 = await this.provider.getEA14(kind);
+      const changes = ea14.states.map(state => ({
+        state, key: `${kind}:${state.uf}`, version: state.version ?? state.generatedAt ?? JSON.stringify(state.raw),
+      }));
+      if (!this.initialized.has(kind)) {
+        for (const item of changes) this.stateVersions.set(item.key, item.version);
+        this.initialized.add(kind);
+        return;
+      }
+      const pending = changes.filter(item => this.stateVersions.get(item.key) !== item.version);
+      // The national result belongs to the federal cycle, not to each changed UF.
+      const nationalSaved = kind !== 'federal' || pending.length === 0 ||
+        await this.save(() => this.provider.getNationalResult(ElectionOffice.PRESIDENT), report, 'Atualização nacional, baixando…');
+      for (const {state, key, version} of pending) {
+        report.changedStates.push(key);
+        const saved = await this.updateState(kind, state.uf, report);
+        if (saved && nationalSaved) this.stateVersions.set(key, version);
+      }
+    } catch (error) { report.errors.push(error instanceof Error ? error.message : String(error)); }
+  }
+
+  private async save(job: () => Promise<ProviderResult>, report: PollingCycleReport, activity?:string): Promise<boolean> {
+    try {
+      if(activity)this.options.onActivity?.(activity);
+      const result = await job();
+      await this.onResult?.(result);
+      report.updatedResults++;
+      return true;
+    } catch (error) {
+      report.errors.push(error instanceof Error ? error.message : String(error));
+      return false;
+    }
+  }
+
+  private async updateState(kind: Kind, uf: string, report: PollingCycleReport): Promise<boolean> {
+    const offices = kind === 'federal'
+      ? (this.options.federalOffices ?? [ElectionOffice.PRESIDENT])
+      : (this.options.stateOffices ?? [ElectionOffice.GOVERNOR, ElectionOffice.SENATOR]);
+    const saved = await Promise.all(offices.map(office => this.save(
+      () => this.provider.getStateResult(uf, office), report, `Atualização na UF ${uf}, baixando ${office}…`,
+    )));
+    let complete = saved.every(Boolean);
+    try {
+      const ea15 = await this.provider.getEA15(uf, kind);
+      for (const municipality of ea15.municipalities) {
+        const key = `${kind}:${uf}:${municipality.code}`;
+        const version = municipality.version ?? municipality.generatedAt ?? JSON.stringify(municipality.raw);
+        // First seen after the EA14 baseline is pending data, not a completed download.
+        if (this.municipalityVersions.get(key) === version) continue;
+        report.changedMunicipalities.push(key);
+        const results = await Promise.all(offices.map(office => this.save(
+          () => this.provider.getMunicipalityResult(uf, municipality.code, office), report,
+          `Atualização no município ${uf}/${municipality.code}, baixando ${office}…`,
+        )));
+        if (results.every(Boolean)) this.municipalityVersions.set(key, version);
+        else complete = false;
+      }
+    } catch (error) {
+      report.errors.push(error instanceof Error ? error.message : String(error));
+      complete = false;
+    }
+    return complete;
+  }
 }

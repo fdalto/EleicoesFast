@@ -31,3 +31,9 @@
 - `MapPage` — `src/map/MapPage.tsx`: escolhe uma projeção salva e oferece navegação Brasil, UF e municípios sem modificar a execução derivada.
 - `mapTerritories/territoryColor` — `src/map/MapModels.ts`: adapta agregados e unidades aos códigos IBGE e define a codificação visual por líder.
 - `featureBounds/featurePath` — `src/map/GeoPath.ts`: projeta GeoJSON local em caminhos SVG, sem biblioteca cartográfica externa.
+- `PollingManager.lastError` — `src/tse/polling/PollingManager.ts`: expõe a última falha do ciclo; `runNow` compartilha a execução em voo e `pause` suspende novos disparos.
+- `TSE2026PollingCoordinator.monitor/updateState/save` — `src/tse/polling/TSE2026PollingCoordinator.ts`: confirma versões após persistência, recupera pendências e atualiza Presidente Brasil uma vez por ciclo federal alterado.
+- `TSE2026Provider.loadConfiguration` — `src/tse/providers/TSE2026Provider.ts`: resolve abrangência BR usando o EA12 de cada eleição, prepara o cache municipal e publica a configuração somente após sucesso; bootstrap concorrente é compartilhado.
+- `AutomaticSyncService.start/stop` — `src/services/AutomaticSyncService.ts`: coordena carga nacional inicial de Presidente/Governador, fila municipal limitada e início do polling seletivo a cada 10 segundos.
+- `IndexedDBStorage.saveAutomaticSyncState/getAutomaticSyncState` — `src/storage/IndexedDBStorage.ts`: persiste o estado operacional do modo automático na store `pollingState`.
+- `downloadStatesInQueue` — `src/services/StateBatchDownload.ts`: descobre UFs disponíveis, baixa e persiste cada resultado estadual sequencialmente, publica progresso e registra falhas sem interromper as demais UFs.

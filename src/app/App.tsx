@@ -1,9 +1,199 @@
-import{useMemo,useState}from'react';import{ElectionOffice}from'../election/normalized/ElectionOffice';import type{NormalizedElectionResult,ResultScope}from'../election/normalized/ElectionResult';import{MapPage}from'../map/MapPage';import{ProjectionPage}from'../projection/ui/ProjectionPage';import{CorsDiagnosticService,type CorsDiagnostic}from'../services/CorsDiagnosticService';import{IndexedDBStorage}from'../storage/IndexedDBStorage';import{RequestScheduler}from'../tse/polling/RequestScheduler';import{TSE2022Provider}from'../tse/providers/TSE2022Provider';import{TSE2026Provider}from'../tse/providers/TSE2026Provider';import type{Municipality,ProviderResult,TSEElectionProvider}from'../tse/providers/TSEElectionProvider';import{DirectTSETransport}from'../tse/transport/DirectTSETransport';import{ScheduledTSETransport}from'../tse/transport/ScheduledTSETransport';import type{TSETransport}from'../tse/transport/TSETransport';
-type Area='OFFICIAL'|'PROJECTIONS'|'MAP'|'DEBUG';type Profile='2022_OFFICIAL'|'2026_SIMULATION'|'2026_OFFICIAL';
-export function App(){const scheduler=useMemo(()=>new RequestScheduler({maxRequestsPerSecond:80,maxConcurrentRequests:10}),[]),transport=useMemo(()=>new ScheduledTSETransport(scheduler,new DirectTSETransport()),[scheduler]),storage=useMemo(()=>new IndexedDBStorage(),[]),[area,setArea]=useState<Area>('OFFICIAL');return <main><AreaNavigation area={area} setArea={setArea}/>{area==='OFFICIAL'&&<OfficialDashboard storage={storage} transport={transport}/>} {area==='PROJECTIONS'&&<ProjectionPage storage={storage}/>} {area==='MAP'&&<MapPage storage={storage}/>} {area==='DEBUG'&&<DebugPage storage={storage}/>}</main>}
-function AreaNavigation({area,setArea}:{area:Area;setArea:(area:Area)=>void}){return <nav className="area-nav">{([['OFFICIAL','RESULTADO OFICIAL'],['PROJECTIONS','PROJEÇÕES'],['MAP','MAPA'],['DEBUG','DEBUG']]as const).map(([id,label])=><button key={id} className={area===id?'active':''} onClick={()=>setArea(id)}>{label}</button>)}</nav>}
-function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transport:TSETransport}){const[profile,setProfile]=useState<Profile>('2022_OFFICIAL'),[simulationBase,setSimulationBase]=useState(''),provider=useMemo<TSEElectionProvider>(()=>profile==='2022_OFFICIAL'?new TSE2022Provider(transport):new TSE2026Provider(transport,{baseUrl:profile==='2026_OFFICIAL'?'https://resultados.tse.jus.br':simulationBase,environment:profile==='2026_OFFICIAL'?'oficial':'simulado'}),[profile,simulationBase,transport]),[office,setOffice]=useState(ElectionOffice.PRESIDENT),[uf,setUf]=useState('SP'),[scope,setScope]=useState<ResultScope>('UF'),[municipalities,setMunicipalities]=useState<Municipality[]>([]),[municipalityCode,setMunicipalityCode]=useState(''),[result,setResult]=useState<NormalizedElectionResult|null>(null),[raw,setRaw]=useState<unknown>(null),[tab,setTab]=useState<'RESUMO'|'RAW JSON'|'NORMALIZADO'>('RESUMO'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[cors,setCors]=useState<CorsDiagnostic|null>(null),[logs,setLogs]=useState<Array<Record<string,unknown>>>([]),[counts,setCounts]=useState({rawFiles:0,results:0,municipalities:0}),[discovery,setDiscovery]=useState('');
- async function run(action:()=>Promise<void>){setBusy(true);setError('');try{await action()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}async function bootstrap(){await run(async()=>{if(profile==='2026_SIMULATION'&&!simulationBase)throw new Error('Informe a URL base publicada pelo TSE para o simulado');const federal=await provider.discoverElection(ElectionOffice.PRESIDENT),state=await provider.discoverElection(ElectionOffice.GOVERNOR);setDiscovery(`Federal ${federal} · Estadual ${state}`)})}async function loadMunicipalities(){await run(async()=>{const list=await provider.getMunicipalities(uf,office);await storage.saveMunicipalities(list);setMunicipalities(list);setMunicipalityCode(list[0]?.code??'')})}async function persist(r:ProviderResult){setResult(r.normalized);setRaw(r.raw);const key=`${provider.id}:${r.transport.url}`;await storage.saveResult({key,provider:provider.id,url:r.transport.url,raw:r.raw,fetchedAt:r.transport.fetchedAt,lastChecked:r.transport.fetchedAt,etag:r.transport.headers.etag??null,lastModified:r.transport.headers['last-modified']??null,status:r.transport.status,bytes:r.transport.bytes},r.normalized);setLogs(v=>[{timestamp:r.transport.fetchedAt,url:r.transport.url,status:r.transport.status,bytes:r.transport.bytes},...v]);setCounts(await storage.count())}async function load(){await run(async()=>persist(scope==='BRASIL'?await provider.getNationalResult(office):scope==='UF'?await provider.getStateResult(uf,office):await provider.getMunicipalityResult(uf,municipalityCode,office)))}
- return <><header><div><span className="eyebrow">TSE · RESULTADOS OFICIAIS</span><h1>Eleições Fast</h1><p>Coleta técnica, normalização e armazenamento local.</p></div><span className="badge">{profile.replace('_',' ')}</span></header><section className="status"><Stat label="CORS" value={cors?.success?'Liberado':cors?'Falhou':'Não testado'}/><Stat label="Configuração" value={discovery||'Não carregada'}/><Stat label="Arquivos" value={String(counts.rawFiles)}/><Stat label="Respostas 200" value={String(logs.filter(x=>x.status===200).length)}/></section><section className="panel controls"><h2>Consulta oficial</h2><div className="grid"><label>Provider<select value={profile} onChange={e=>setProfile(e.target.value as Profile)}><option value="2022_OFFICIAL">2022 Official</option><option value="2026_SIMULATION">2026 Simulation</option><option value="2026_OFFICIAL">2026 Official</option></select></label><label>Cargo<select value={office} onChange={e=>setOffice(e.target.value as ElectionOffice)}>{Object.values(ElectionOffice).map(x=><option key={x}>{x}</option>)}</select></label><label>Abrangência<select value={scope} onChange={e=>setScope(e.target.value as ResultScope)}><option value="BRASIL">Brasil</option><option value="UF">UF</option><option value="MUNICIPALITY">Município</option></select></label><label>UF<select value={uf} disabled={scope==='BRASIL'} onChange={e=>setUf(e.target.value)}>{UFS.map(x=><option key={x}>{x}</option>)}</select></label>{profile==='2026_SIMULATION'&&<label>URL do simulado<input value={simulationBase} onChange={e=>setSimulationBase(e.target.value)}/></label>}{scope==='MUNICIPALITY'&&<label>Município<select value={municipalityCode} onChange={e=>setMunicipalityCode(e.target.value)}><option value="">Carregue o EA12…</option>{municipalities.map(m=><option value={m.code} key={m.code}>{m.name}</option>)}</select></label>}</div><div className="actions"><button onClick={bootstrap} disabled={busy}>Carregar configuração</button>{scope==='MUNICIPALITY'&&<button className="secondary" onClick={loadMunicipalities}>Carregar municípios</button>}<button onClick={load} disabled={busy||scope==='MUNICIPALITY'&&!municipalityCode}>{busy?'Aguarde…':'Carregar resultado'}</button><button className="secondary" onClick={()=>run(async()=>setCors(await new CorsDiagnosticService(transport).run()))}>Diagnóstico CORS</button></div>{error&&<p className="error">{error}</p>}</section><section className="panel"><nav>{(['RESUMO','RAW JSON','NORMALIZADO']as const).map(x=><button className={tab===x?'active':''} onClick={()=>setTab(x)} key={x}>{x}</button>)}</nav>{tab==='RESUMO'&&<Summary result={result}/>} {tab==='RAW JSON'&&<pre>{raw?JSON.stringify(raw,null,2):'Nenhum arquivo.'}</pre>}{tab==='NORMALIZADO'&&<pre>{result?JSON.stringify(result,null,2):'Nenhum resultado.'}</pre>}</section></>}
-function DebugPage({storage}:{storage:IndexedDBStorage}){const[counts,setCounts]=useState<unknown>(null);return <><header><div><span className="eyebrow">DIAGNÓSTICO</span><h1>Debug</h1></div></header><section className="panel"><button onClick={async()=>setCounts({official:await storage.count(),projections:await storage.projectionRuns.count(),projectionUnits:await storage.projectionResults.count()})}>Atualizar storage</button><pre>{JSON.stringify(counts,null,2)}</pre></section></>}
-const UFS=['SP','RJ','MG','BA','RS','PR','PE','CE','PA','SC','GO','MA','PB','AM','ES','RN','AL','PI','MT','DF','MS','SE','RO','TO','AC','AP','RR'];function Stat({label,value}:{label:string,value:string}){return <div><small>{label}</small><strong>{value}</strong></div>}function fmt(v:number|null){return v==null?'—':v.toLocaleString('pt-BR')}function Summary({result:r}:{result:NormalizedElectionResult|null}){if(!r)return <div className="empty">Escolha cargo e abrangência.</div>;return <div><div className="metrics"><Stat label="Seções totalizadas" value={`${fmt(r.countedSections)} / ${fmt(r.totalSections)}`}/><Stat label="Votos válidos" value={fmt(r.validVotes)}/><Stat label="Brancos" value={fmt(r.blankVotes)}/><Stat label="Nulos" value={fmt(r.nullVotes)}/></div><h2>Candidatos</h2><div className="candidates">{r.candidates.map(c=><article key={c.id??c.number}><span className="number">{c.number}</span><div><strong>{c.name}</strong><small>{c.party} · {c.status}</small></div><div className="votes"><strong>{fmt(c.votes)}</strong><small>{c.percentage?.toLocaleString('pt-BR')}%</small></div></article>)}</div></div>}
+import {useEffect,useMemo,useRef,useState} from 'react';
+import {ElectionOffice} from '../election/normalized/ElectionOffice';
+import type {NormalizedElectionResult,ResultScope} from '../election/normalized/ElectionResult';
+import {MapPage} from '../map/MapPage';
+import {ProjectionPage} from '../projection/ui/ProjectionPage';
+import {AutomaticSyncService,initialAutomaticSyncState,type AutomaticSyncState} from '../services/AutomaticSyncService';
+import {CorsDiagnosticService,type CorsDiagnostic} from '../services/CorsDiagnosticService';
+import {downloadStatesInQueue,type StateBatchProgress} from '../services/StateBatchDownload';
+import {IndexedDBStorage} from '../storage/IndexedDBStorage';
+import {RequestScheduler} from '../tse/polling/RequestScheduler';
+import {TSE2022Provider} from '../tse/providers/TSE2022Provider';
+import {TSE2026Provider} from '../tse/providers/TSE2026Provider';
+import type {Municipality,ProviderResult} from '../tse/providers/TSEElectionProvider';
+import {DirectTSETransport} from '../tse/transport/DirectTSETransport';
+import {ScheduledTSETransport} from '../tse/transport/ScheduledTSETransport';
+import type {TSETransport} from '../tse/transport/TSETransport';
+
+type Area='OFFICIAL'|'PROJECTIONS'|'MAP'|'DEBUG';
+type Profile='2022_OFFICIAL'|'2026_SIMULATION'|'2026_OFFICIAL';
+
+export function App(){
+  // 80 req/s is 20% below the 100 req/s limit published by the TSE.
+  const scheduler=useMemo(()=>new RequestScheduler({maxRequestsPerSecond:80,maxConcurrentRequests:10}),[]);
+  const transport=useMemo(()=>new ScheduledTSETransport(scheduler,new DirectTSETransport()),[scheduler]);
+  const storage=useMemo(()=>new IndexedDBStorage(),[]);
+  const [area,setArea]=useState<Area>('OFFICIAL');
+  return <main>
+    <AreaNavigation area={area} setArea={setArea}/>
+    <div hidden={area!=='OFFICIAL'}><OfficialDashboard storage={storage} transport={transport}/></div>
+    {area==='PROJECTIONS'&&<ProjectionPage storage={storage}/>}
+    {area==='MAP'&&<MapPage storage={storage}/>}
+    {area==='DEBUG'&&<DebugPage storage={storage}/>}
+  </main>;
+}
+
+function AreaNavigation({area,setArea}:{area:Area;setArea:(area:Area)=>void}){
+  return <nav className="area-nav">{([
+    ['OFFICIAL','RESULTADO OFICIAL'],['PROJECTIONS','PROJEÇÕES'],['MAP','MAPA'],['DEBUG','DEBUG'],
+  ] as const).map(([id,label])=><button key={id} className={area===id?'active':''} onClick={()=>setArea(id)}>{label}</button>)}</nav>;
+}
+
+function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transport:TSETransport}){
+  const [profile,setProfile]=useState<Profile>('2022_OFFICIAL');
+  const [simulationBase,setSimulationBase]=useState('https://resultados-sim.tse.jus.br/simulado');
+  const provider=useMemo(()=>profile==='2022_OFFICIAL'
+    ? new TSE2022Provider(transport)
+    : new TSE2026Provider(transport,{
+      baseUrl:profile==='2026_OFFICIAL'?'https://resultados.tse.jus.br':simulationBase,
+      environment:profile==='2026_OFFICIAL'?'oficial':'simulado2026',
+    }),[profile,simulationBase,transport]);
+  const [office,setOffice]=useState(ElectionOffice.PRESIDENT);
+  const [uf,setUf]=useState('SP');
+  const [scope,setScope]=useState<ResultScope>('UF');
+  const [municipalities,setMunicipalities]=useState<Municipality[]>([]);
+  const [municipalityCode,setMunicipalityCode]=useState('');
+  const [result,setResult]=useState<NormalizedElectionResult|null>(null);
+  const [raw,setRaw]=useState<unknown>(null);
+  const [tab,setTab]=useState<'RESUMO'|'RAW JSON'|'NORMALIZADO'>('RESUMO');
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [cors,setCors]=useState<CorsDiagnostic|null>(null);
+  const [logs,setLogs]=useState<Array<Record<string,unknown>>>([]);
+  const [counts,setCounts]=useState({rawFiles:0,results:0,municipalities:0});
+  const [discovery,setDiscovery]=useState('');
+  const [batch,setBatch]=useState<StateBatchProgress|null>(null);
+  const [automatic,setAutomatic]=useState<AutomaticSyncState>(initialAutomaticSyncState);
+  const automaticRef=useRef<AutomaticSyncService|null>(null);
+
+  useEffect(()=>{
+    setAutomatic(initialAutomaticSyncState());
+    return ()=>{automaticRef.current?.stop();automaticRef.current=null;};
+  },[provider]);
+
+  async function run(action:()=>Promise<void>){
+    setBusy(true);setError('');
+    try{await action();}catch(e){setError(e instanceof Error?e.message:String(e));}
+    finally{setBusy(false);}
+  }
+
+  async function bootstrap(){
+    await run(async()=>{
+      if(profile==='2026_SIMULATION'&&!simulationBase)throw new Error('Informe a URL base publicada pelo TSE para o simulado');
+      const federal=await provider.discoverElection(ElectionOffice.PRESIDENT);
+      const state=await provider.discoverElection(ElectionOffice.GOVERNOR);
+      setDiscovery(`Federal ${federal} · Estadual ${state}`);
+    });
+  }
+
+  async function loadMunicipalities(){
+    await run(async()=>{
+      const list=await provider.getMunicipalities(uf,office);
+      await storage.saveMunicipalities(list);
+      setMunicipalities(list);
+      setMunicipalityCode(list[0]?.code??'');
+    });
+  }
+
+  function rawRecord(r:ProviderResult){
+    const key=`${provider.id}:${r.transport.url}`;
+    return {key,provider:provider.id,url:r.transport.url,raw:r.raw,fetchedAt:r.transport.fetchedAt,lastChecked:r.transport.fetchedAt,etag:r.transport.headers.etag??null,lastModified:r.transport.headers['last-modified']??null,status:r.transport.status,bytes:r.transport.bytes};
+  }
+
+  async function persist(r:ProviderResult,display=true){
+    if(display){setResult(r.normalized);setRaw(r.raw);}
+    await storage.saveResult(rawRecord(r),r.normalized);
+    setLogs(current=>[{timestamp:r.transport.fetchedAt,url:r.transport.url,status:r.transport.status,bytes:r.transport.bytes},...current].slice(0,200));
+    setCounts(await storage.count());
+  }
+
+  async function persistAutomatic(r:ProviderResult){
+    // URL/provider is the stable key: updates replace the current value consumed by projections and maps.
+    await storage.saveResult(rawRecord(r),r.normalized);
+  }
+
+  async function load(){
+    await run(async()=>persist(scope==='BRASIL'
+      ? await provider.getNationalResult(office)
+      : scope==='UF'
+        ? await provider.getStateResult(uf,office)
+        : await provider.getMunicipalityResult(uf,municipalityCode,office)));
+  }
+
+  async function loadAllStates(){
+    setBatch(null);
+    await run(async()=>{await downloadStatesInQueue(provider,office,UFS,r=>persist(r,false),setBatch);});
+  }
+
+  function toggleAutomatic(){
+    if(automatic.enabled){automaticRef.current?.stop();return;}
+    if(!(provider instanceof TSE2026Provider)){
+      setError('O modo automático está disponível para os perfis 2026.');
+      return;
+    }
+    setError('');
+    const service=new AutomaticSyncService(provider,provider.id,{
+      persistResult:persistAutomatic,
+      persistMunicipalities:list=>storage.saveMunicipalities(list),
+      persistState:state=>storage.saveAutomaticSyncState(state),
+      onState:state=>{
+        setAutomatic(state);
+        if(state.phase==='POLLING'||(state.total>0&&state.completed===state.total))void storage.count().then(setCounts);
+      },
+    });
+    automaticRef.current=service;
+    void service.start();
+  }
+
+  const controlsDisabled=busy||automatic.enabled;
+  return <>
+    <header><div><span className="eyebrow">TSE · RESULTADOS OFICIAIS</span><h1>Eleições Fast</h1><p>Coleta técnica, normalização e armazenamento local.</p></div><span className="badge">{profile.replace('_',' ')}</span></header>
+    <section className="status"><Stat label="CORS" value={cors?.success?'Liberado':cors?'Falhou':'Não testado'}/><Stat label="Configuração" value={discovery||'Não carregada'}/><Stat label="Arquivos" value={String(counts.rawFiles)}/><Stat label="Respostas 200" value={String(logs.filter(x=>x.status===200).length)}/></section>
+    <section className="panel controls">
+      <h2>Consulta oficial</h2>
+      <fieldset disabled={controlsDisabled} style={{border:0,padding:0,margin:0}}>
+        <div className="grid">
+          <label>Provider<select value={profile} onChange={e=>setProfile(e.target.value as Profile)}><option value="2022_OFFICIAL">2022 Official</option><option value="2026_SIMULATION">2026 Simulation</option><option value="2026_OFFICIAL">2026 Official</option></select></label>
+          <label>Cargo<select value={office} onChange={e=>setOffice(e.target.value as ElectionOffice)}>{Object.values(ElectionOffice).map(value=><option key={value}>{value}</option>)}</select></label>
+          <label>Abrangência<select value={scope} onChange={e=>setScope(e.target.value as ResultScope)}><option value="BRASIL">Brasil</option><option value="UF">UF</option><option value="MUNICIPALITY">Município</option></select></label>
+          <label>UF<select value={uf} disabled={scope==='BRASIL'} onChange={e=>setUf(e.target.value)}>{UFS.map(value=><option key={value}>{value}</option>)}</select></label>
+          {profile==='2026_SIMULATION'&&<label>URL do simulado<input value={simulationBase} onChange={e=>setSimulationBase(e.target.value)}/></label>}
+          {scope==='MUNICIPALITY'&&<label>Município<select value={municipalityCode} onChange={e=>setMunicipalityCode(e.target.value)}><option value="">Carregue o EA12…</option>{municipalities.map(m=><option value={m.code} key={m.code}>{m.name}</option>)}</select></label>}
+        </div>
+        <div className="actions">
+          <button onClick={bootstrap}>Carregar configuração</button>
+          {scope==='MUNICIPALITY'&&<button className="secondary" onClick={loadMunicipalities}>Carregar municípios</button>}
+          <button onClick={load} disabled={busy||scope==='MUNICIPALITY'&&!municipalityCode}>{busy?'Aguarde…':'Carregar resultado'}</button>
+          <button className="secondary" onClick={()=>run(async()=>setCors(await new CorsDiagnosticService(transport).run(profile==='2026_SIMULATION'?simulationBase.replace(/\/$/,'')+'/simulado2026/comum/config/ele-c.json':undefined)))}>Diagnóstico CORS</button>
+        </div>
+      </fieldset>
+      {scope==='BRASIL'&&<div className="state-batch"><button onClick={loadAllStates} disabled={controlsDisabled}>baixar todos estados em fila</button>{batch&&<div role="status"><p>{batch.current?`Baixando ${batch.current}…`:'Fila concluída.'} {batch.completed}/{batch.total} UFs processadas · {batch.saved} salvas · {batch.errors.length} falhas</p><progress value={batch.completed} max={batch.total}/>{batch.errors.length>0&&<ul>{batch.errors.map(item=><li key={item.uf}>{item.uf}: {item.message}</li>)}</ul>}</div>}</div>}
+      {profile!=='2022_OFFICIAL'&&<AutomaticMode state={automatic} onToggle={toggleAutomatic}/>}
+      {error&&<p className="error">{error}</p>}
+    </section>
+    <section className="panel"><nav>{(['RESUMO','RAW JSON','NORMALIZADO'] as const).map(value=><button className={tab===value?'active':''} onClick={()=>setTab(value)} key={value}>{value}</button>)}</nav>{tab==='RESUMO'&&<Summary result={result}/>} {tab==='RAW JSON'&&<pre>{raw?JSON.stringify(raw,null,2):'Nenhum arquivo.'}</pre>}{tab==='NORMALIZADO'&&<pre>{result?JSON.stringify(result,null,2):'Nenhum resultado.'}</pre>}</section>
+  </>;
+}
+
+function AutomaticMode({state,onToggle}:{state:AutomaticSyncState;onToggle:()=>void}){
+  const showProgress=state.enabled&&state.phase!=='POLLING'&&state.total>0;
+  return <div className={`automatic-mode ${state.enabled?'automatic-mode-on':''}`}>
+    <button className="automatic-button" onClick={onToggle}>{state.enabled?'Desligar modo automático':'Modo automático'}</button>
+    <label className="polling-switch"><input type="checkbox" role="switch" checked={state.pollingEnabled} onChange={onToggle}/><span>polling ligado</span></label>
+    <div className="automatic-feedback" role="status">
+      <strong>{state.message}</strong>
+      {showProgress&&<><small>{state.completed.toLocaleString('pt-BR')} / {state.total.toLocaleString('pt-BR')} · {state.saved.toLocaleString('pt-BR')} salvos · {state.errors} falhas</small><progress value={state.completed} max={state.total}/></>}
+      {state.phase==='POLLING'&&<small>Verificação inteligente a cada 10 segundos via EA14 → EA15 → EA20{state.lastCheckedAt?` · última: ${new Date(state.lastCheckedAt).toLocaleTimeString('pt-BR')}`:''}</small>}
+    </div>
+  </div>;
+}
+
+function DebugPage({storage}:{storage:IndexedDBStorage}){
+  const [counts,setCounts]=useState<unknown>(null);
+  return <><header><div><span className="eyebrow">DIAGNÓSTICO</span><h1>Debug</h1></div></header><section className="panel"><button onClick={async()=>setCounts({official:await storage.count(),automatic:await storage.getAutomaticSyncState('automatic-sync'),projections:await storage.projectionRuns.count(),projectionUnits:await storage.projectionResults.count()})}>Atualizar storage</button><pre>{JSON.stringify(counts,null,2)}</pre></section></>;
+}
+
+const UFS=['SP','RJ','MG','BA','RS','PR','PE','CE','PA','SC','GO','MA','PB','AM','ES','RN','AL','PI','MT','DF','MS','SE','RO','TO','AC','AP','RR'];
+function Stat({label,value}:{label:string;value:string}){return <div><small>{label}</small><strong>{value}</strong></div>;}
+function fmt(value:number|null){return value==null?'—':value.toLocaleString('pt-BR');}
+function Summary({result:r}:{result:NormalizedElectionResult|null}){if(!r)return <div className="empty">Escolha cargo e abrangência.</div>;return <div><div className="metrics"><Stat label="Seções totalizadas" value={`${fmt(r.countedSections)} / ${fmt(r.totalSections)}`}/><Stat label="Votos válidos" value={fmt(r.validVotes)}/><Stat label="Brancos" value={fmt(r.blankVotes)}/><Stat label="Nulos" value={fmt(r.nullVotes)}/></div><h2>Candidatos</h2><div className="candidates">{r.candidates.map(c=><article key={c.id??c.number}><span className="number">{c.number}</span><div><strong>{c.name}</strong><small>{c.party} · {c.status}</small></div><div className="votes"><strong>{fmt(c.votes)}</strong><small>{c.percentage?.toLocaleString('pt-BR')}%</small></div></article>)}</div></div>;}

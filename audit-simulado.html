@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8"><title>Auditoria do simulado TSE 2026</title>
+<style>body{font:16px system-ui;max-width:1000px;margin:40px auto;padding:16px}button{padding:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f4f6;padding:16px}</style>
+<h1>Auditoria do simulado TSE 2026</h1>
+<p>Teste manual e limitado aos sete exemplos publicados pelo TSE. Não grava resultados no IndexedDB. Não inicia polling.</p>
+<button id="run">Verificar endpoints e parsers</button> <button id="export" disabled>Exportar relatório</button><pre id="output">Aguardando execução.</pre>
+<script type="module">
+import {parseAndDiscoverEA11} from '/src/tse/2026/parsers/EA11Parser.ts';
+import {parseEA12} from '/src/tse/2026/parsers/EA12Parser.ts';
+import {parseEA14} from '/src/tse/2026/parsers/EA14Parser.ts';
+import {parseEA15} from '/src/tse/2026/parsers/EA15Parser.ts';
+import {parseEA20} from '/src/tse/2026/parsers/EA20Parser.ts';
+import {TSE2026UrlBuilder} from '/src/tse/2026/TSE2026UrlBuilder.ts';
+import {ElectionOffice} from '/src/election/normalized/ElectionOffice.ts';
+const root='https://resultados-sim.tse.jus.br/simulado/simulado2026/';
+const entries=[['EA11','comum/config/ele-c.json'],['EA12','ele2026/21270/config/mun-e021270-cm.json'],['EA14','ele2026/21270/dados/br/br-e021270-ab.json'],['EA15','ele2026/21270/dados/ac/ac-e021270-ab.json'],['Presidente','ele2026/21270/dados/br/br-c0001-e021270-u.json'],['Governador','ele2026/21272/dados/ac/ac-c0003-e021272-u.json'],['Senador','ele2026/21272/dados/ac/ac01120-c0005-e021272-u.json']];
+const out=document.querySelector('#output');let report;
+document.querySelector('#run').onclick=async()=>{
+ document.querySelector('#run').disabled=true;
+ report={at:new Date().toISOString(),origin:location.origin,results:[]};
+ for(const [name,path] of entries){
+  const entry={name,url:root+path};
+  try{
+   const r=await fetch(entry.url,{cache:'no-cache',signal:AbortSignal.timeout(15000)});
+   entry.status=r.status;entry.headers=Object.fromEntries(r.headers);
+   if(!r.ok)throw new Error('HTTP '+r.status);
+   const raw=await r.json();entry.idg=raw.idg;entry.generatedAt=raw.dg+' '+raw.hg;
+   if(name==='EA11'){
+    const d=parseAndDiscoverEA11(raw);entry.discovery={cycle:d.cycle,poll:d.pollId,federal:d.federalElectionId,state:d.stateElectionId,federalStates:d.federalStates,stateStates:d.stateStates};
+    try{entry.stateUrl=new TSE2026UrlBuilder({baseUrl:'https://resultados-sim.tse.jus.br/simulado',environment:'simulado2026'},d).ea20('UF',ElectionOffice.GOVERNOR,'AC')}catch(e){entry.builderError=e.message}
+   }else if(name==='EA12'){const m=parseEA12(raw,'AC');entry.municipalities=m.length;entry.acrelandia=m.find(x=>x.code==='01120');}
+   else if(name==='EA14')entry.states=parseEA14(raw).length;
+   else if(name==='EA15')entry.municipalities=parseEA15(raw).length;
+   else{
+    const office=name==='Presidente'?ElectionOffice.PRESIDENT:name==='Governador'?ElectionOffice.GOVERNOR:ElectionOffice.SENATOR;
+    const normalized=parseEA20(raw,{office,officeCode:name==='Presidente'?'0001':name==='Governador'?'0003':'0005',electionId:raw.ele,pollId:'17801',round:1,scope:name==='Presidente'?'BRASIL':name==='Governador'?'UF':'MUNICIPALITY',uf:name==='Presidente'?null:'AC',municipalityCode:name==='Senador'?'01120':null,sourceUrl:entry.url,fetchedAt:new Date().toISOString()});
+    entry.summary={progress:normalized.countedSectionsPercentage,validVotes:normalized.validVotes,totalVotes:normalized.totalVotes,turnout:normalized.turnout,candidates:normalized.candidates.length,rawSeats:raw.carg[0].nv,normalizedSeats:normalized.seatsAvailable??null,rawVoteDestinations:[...new Set(raw.carg.flatMap(c=>c.agr.flatMap(g=>g.par.flatMap(p=>p.cand.map(c=>c.dvt)))))],normalizedCandidate:normalized.candidates[0],rawVotes:raw.v};
+   }
+   if(name==='EA11' && (r.headers.get('etag')||r.headers.get('last-modified'))){
+    const headers=r.headers.get('etag')?{'If-None-Match':r.headers.get('etag')}:{'If-Modified-Since':r.headers.get('last-modified')};
+    try{const conditional=await fetch(entry.url,{headers,cache:'no-cache',signal:AbortSignal.timeout(15000)});entry.conditionalStatus=conditional.status;}catch(e){entry.conditionalError=e.message;}
+   }
+  }catch(e){entry.error=e.message;}
+  report.results.push(entry);out.textContent=JSON.stringify(report,null,2);
+ }
+ document.querySelector('#run').disabled=false;document.querySelector('#export').disabled=false;
+};
+document.querySelector('#export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='auditoria-simulado-2026.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+</script></html>
