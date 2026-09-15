@@ -1,0 +1,1 @@
+export class ChangeDetector {private versions=new Map<string,string>();hasChanged(key:string,value:unknown){const next=JSON.stringify(value),old=this.versions.get(key);this.versions.set(key,next);return old!==undefined&&old!==next}}

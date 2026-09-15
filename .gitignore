@@ -1,0 +1,6 @@
+# Projetos externos usados apenas como referência
+/references/
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store

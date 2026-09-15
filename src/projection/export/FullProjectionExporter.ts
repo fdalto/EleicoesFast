@@ -1,0 +1,2 @@
+import type{ProjectionRun}from'../models/ProjectionModels';
+export class FullProjectionExporter {export(run:ProjectionRun){return structuredClone(run)}serialize(run:ProjectionRun){return JSON.stringify(this.export(run),null,2)}fileName(run:ProjectionRun){return`projection-${run.electionId}-round-${run.round}-${run.office.toLowerCase()}-${run.method.toLowerCase()}-${run.createdAt.replace(/[:.]/g,'-')}.json`}}

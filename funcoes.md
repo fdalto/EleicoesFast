@@ -1,0 +1,33 @@
+# Catálogo de funções
+
+- `DirectTSETransport.fetchJson` — `src/tse/transport/DirectTSETransport.ts`: Fetch HTTP efetivo, timeout, cache condicional, headers, bytes e latência.
+- `ScheduledTSETransport.fetchJson` — `src/tse/transport/ScheduledTSETransport.ts`: passagem obrigatória pela fila global, deduplicação e retry seletivo.
+- `CorsDiagnosticService.run` — `src/services/CorsDiagnosticService.ts`: diagnóstico real de acesso cross-origin.
+- `TSE2022UrlBuilder.*` — `src/tse/2022/TSE2022UrlBuilder.ts`: URLs 2022 centralizadas e códigos por cargo.
+- `parseSimplified2022` — `src/tse/2022/parsers/SimplifiedResultParser.ts`: normaliza os campos reais do JSON simplificado.
+- `TSE2022Provider.*` — `src/tse/providers/TSE2022Provider.ts`: descoberta EA12 e resultados Brasil/UF/município.
+- `ElectionDiscoveryService.discover` — `src/services/ElectionDiscoveryService.ts`: baixa o único bootstrap EA11 e descobre eleição federal/estadual.
+- `parseAndDiscoverEA11` — `src/tse/2026/parsers/EA11Parser.ts`: seleção por pleito, turno, tipo e cargos.
+- `DirectoryTemplateResolver.resolve` — `src/tse/2026/DirectoryTemplateResolver.ts`: resolve tokens oficiais de `arq[].dir`.
+- `formatOfficeCode/formatElectionFileCode/formatPleitoFileCode/formatMunicipalityCode` — `src/tse/2026/formatters.ts`: larguras distintas de códigos.
+- `TSE2026UrlBuilder.*` — `src/tse/2026/TSE2026UrlBuilder.ts`: URLs EA12/EA14/EA15/EA20 com validação de UF, cargo e município.
+- `parseEA12/parseEA14/parseEA15/parseEA20` — `src/tse/2026/parsers/`: adaptação dos arquivos oficiais para estruturas internas.
+- `TSE2026Provider.*` — `src/tse/providers/TSE2026Provider.ts`: bootstrap, caches EA12 e resultados normalizados 2026.
+- `TSE2026PollingCoordinator.runCycle` — `src/tse/polling/TSE2026PollingCoordinator.ts`: polling hierárquico federal/estadual e atualização seletiva.
+- `IndexedDBStorage.saveResult/getRaw/count/clear` — `src/storage/IndexedDBStorage.ts`: persistência raw e normalizada.
+- `RequestScheduler.schedule/getMetrics/clear` — `src/tse/polling/RequestScheduler.ts`: fila prioritária, janela de 80 req/s, concorrência, cancelamento e métricas.
+- `PollingManager.start/pause/runNow` — `src/tse/polling/PollingManager.ts`: ciclo de atualização desacoplado.
+- `ElectionOfficeRules.*` — `src/election/rules/ElectionOfficeRules.ts`: semântica de votos e vagas, incluindo Senador.
+- `App` — `src/app/App.tsx`: dashboard, consulta, CORS, debug e storage.
+- `IndexedDBProjectionSnapshotReader.listSelections/capture` — `src/projection/snapshot/IndexedDBProjectionSnapshotReader.ts`: oferece recortes por eleição, turno, cargo e UF e cria fotografias consistentes, clonadas e imutáveis.
+- `projectTerritory` — `src/projection/math/ProjectTerritory.ts`: aplica a fórmula territorial simples e preserva entradas e resultados intermediários auditáveis.
+- `StateProjectionEngine.run` — `src/projection/engine/StateProjectionEngine.ts`: projeção presidencial independente pelas 27 UFs, incluindo UFs ainda sem dados.
+- `MunicipalityProjectionEngine.run` — `src/projection/engine/MunicipalityProjectionEngine.ts`: projeção independente por município e agregação própria por UF/Brasil.
+- `IndexedDBStorage.saveProjection/getProjection/listProjections` — `src/storage/IndexedDBStorage.ts`: histórico derivado separado dos resultados oficiais.
+- `FullProjectionExporter`, `CompactProjectionExporter` e `EleicoesViewProjectionAdapter` — `src/projection/export/`: saídas auditável, visual compacta e compatível com a referência.
+- `ProjectionPage` — `src/projection/ui/ProjectionPage.tsx`: cálculo manual, cobertura, comparação oficial/projetada, auditoria territorial e downloads JSON.
+- `HistoricalValidVotes2022.get/municipalities` — `src/projection/history/HistoricalValidVotes2022.ts`: consulta a base pública municipal de votos válidos de 2022 por código TSE, cargo e turno.
+- `build-2022-municipality-valid-votes.mjs` — `scripts/`: reproduz `municipios-votos-validos-2022.json` a partir do CSV consolidado e da configuração municipal oficiais do TSE.
+- `MapPage` — `src/map/MapPage.tsx`: escolhe uma projeção salva e oferece navegação Brasil, UF e municípios sem modificar a execução derivada.
+- `mapTerritories/territoryColor` — `src/map/MapModels.ts`: adapta agregados e unidades aos códigos IBGE e define a codificação visual por líder.
+- `featureBounds/featurePath` — `src/map/GeoPath.ts`: projeta GeoJSON local em caminhos SVG, sem biblioteca cartográfica externa.

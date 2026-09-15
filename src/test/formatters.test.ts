@@ -1,0 +1,2 @@
+import{describe,expect,it}from'vitest';import{formatElectionFileCode,formatMunicipalityCode,formatOfficeCode,formatPleitoFileCode}from'../tse/2026/formatters';
+describe('formatadores 2026',()=>{it('usa larguras distintas',()=>{expect(formatOfficeCode(1)).toBe('0001');expect(formatElectionFileCode(544)).toBe('000544');expect(formatPleitoFileCode(304)).toBe('000304');expect(formatMunicipalityCode(42)).toBe('00042')});it('rejeita município longo',()=>expect(()=>formatMunicipalityCode('123456')).toThrow())});

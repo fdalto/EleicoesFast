@@ -1,0 +1,8 @@
+import data from'../../../municipios-votos-validos-2022.json';import{ElectionOffice}from'../../election/normalized/ElectionOffice';
+export interface HistoricalMunicipalityBase {electionId:string;validVotes:number}
+export interface HistoricalMunicipalityIdentity {uf:string;tseCode:string;ibgeCode:string;name:string}
+export interface HistoricalValidVotesRegistry {get(uf:string,tseCode:string,office:ElectionOffice,round:number):HistoricalMunicipalityBase|null;municipalities(uf?:string|null):HistoricalMunicipalityIdentity[]}
+type OfficeKey='president'|'governor'|'senator';type Row=HistoricalMunicipalityIdentity&{validVotes:Partial<Record<OfficeKey,Partial<Record<'1'|'2',number>>>>};
+const rows=data.municipalities as Record<string,Row>,officeKeys:Record<ElectionOffice,OfficeKey>={[ElectionOffice.PRESIDENT]:'president',[ElectionOffice.GOVERNOR]:'governor',[ElectionOffice.SENATOR]:'senator'};
+export class HistoricalValidVotes2022 implements HistoricalValidVotesRegistry {get(uf:string,tseCode:string,office:ElectionOffice,round:number):HistoricalMunicipalityBase|null{const votes=rows[`${uf.toUpperCase()}:${tseCode}`]?.validVotes[officeKeys[office]]?.[String(round)as'1'|'2'];return votes===undefined?null:{electionId:electionId(office,round),validVotes:votes}}municipalities(uf?:string|null):HistoricalMunicipalityIdentity[]{return Object.values(rows).filter(row=>!uf||row.uf===uf.toUpperCase()).map(({uf:state,tseCode,ibgeCode,name})=>({uf:state,tseCode,ibgeCode,name}))}}
+function electionId(office:ElectionOffice,round:number){if(office===ElectionOffice.PRESIDENT)return round===2?'545':'544';if(office===ElectionOffice.GOVERNOR)return round===2?'547':'546';return'546'}

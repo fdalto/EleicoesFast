@@ -1,0 +1,3 @@
+import type{NormalizedElectionResult}from'../../election/normalized/ElectionResult';import type{ElectionOffice}from'../../election/normalized/ElectionOffice';import type{ProjectionSnapshotMetadata}from'../models/ProjectionModels';
+export interface ProjectionSnapshot {metadata:ProjectionSnapshotMetadata;electionId:string;pollId:string|null;round:number;office:ElectionOffice;targetUf:string|null;results:ReadonlyArray<Readonly<NormalizedElectionResult>>;historicalResults:ReadonlyArray<Readonly<NormalizedElectionResult>>}
+export interface ProjectionSelection {electionId:string;round:number;office:ElectionOffice;targetUf:string|null}

@@ -1,0 +1,2 @@
+import{describe,expect,it}from'vitest';import{TSE2022UrlBuilder}from'../tse/2022/TSE2022UrlBuilder';import{ElectionOffice}from'../election/normalized/ElectionOffice';
+describe('URL builder',()=>{it('separa cargo de eleição',()=>{const b=new TSE2022UrlBuilder();expect(b.simplified(ElectionOffice.PRESIDENT,'BRASIL')).toContain('/544/');expect(b.simplified(ElectionOffice.SENATOR,'UF','SP')).toContain('/546/dados-simplificados/sp/sp-c0005-')})});

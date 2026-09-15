@@ -1,0 +1,3 @@
+import{assessMaturity}from'./SampleMaturity';
+import type{ProjectedUnit,ProjectionTerritory}from'../models/ProjectionModels';
+export function createMissingUnit(territory:ProjectionTerritory,capturedAt:string):ProjectedUnit{const maturity=assessMaturity(0);return{territory,status:'NO_DATA',projectionBasis:'NONE',historicalElectionId:null,historicalValidVotes:null,distributionSourceScope:null,countedPercentage:0,totalSections:null,countedSections:null,electorate:null,observedValidVotes:null,estimatedFinalValidVotes:null,candidates:[],maturity:maturity.maturity,maturityLabel:maturity.label,warnings:[maturity.warning!],errors:[],sourceFetchedAt:capturedAt,sourceGeneratedAt:null,sourceUrl:''}}
