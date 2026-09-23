@@ -21,6 +21,10 @@ O arquivo `municipios-votos-validos-2022.json`, na raiz, contém a base históri
 
 A aba **Mapa** visualiza as projeções salvas por UF ou município. A implementação modular e as regras de associação territorial estão descritas em [docs/MAP.md](docs/MAP.md).
 
+## Documentação complementar
+
+A [nota técnica sobre snapshots da apuração eleitoral](nota_tecnica_snapshots_apuracao_eleitoral.pdf) descreve o registro e a preservação das capturas de apuração usadas pelo projeto.
+
 ## Análise e continuidade — 15/09/2026
 
 A revisão e as próximas etapas estão em [docs/DEVELOPMENT_STATUS.md](docs/DEVELOPMENT_STATUS.md). A infraestrutura de polling possui proteção contra ciclos sobrepostos e recuperação de downloads/gravações com falha; sua integração aos controles da interface ainda está pendente.
