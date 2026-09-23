@@ -1,12 +1,15 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
+import {CandidateIdentityPanel} from '../candidates/CandidateIdentityPanel';
 import {ElectionOffice} from '../election/normalized/ElectionOffice';
 import type {NormalizedElectionResult,ResultScope} from '../election/normalized/ElectionResult';
 import {MapPage} from '../map/MapPage';
 import {ProjectionPage} from '../projection/ui/ProjectionPage';
 import {AutomaticSyncService,initialAutomaticSyncState,type AutomaticSyncState} from '../services/AutomaticSyncService';
+import {AutomaticSnapshotService,chooseSnapshotDirectory,type SnapshotDirectoryHandle} from '../services/AutomaticSnapshotService';
 import {CorsDiagnosticService,type CorsDiagnostic} from '../services/CorsDiagnosticService';
+import {DataValidationService,type DataValidationReport} from '../services/DataValidationService';
 import {downloadStatesInQueue,type StateBatchProgress} from '../services/StateBatchDownload';
-import {IndexedDBStorage} from '../storage/IndexedDBStorage';
+import {IndexedDBStorage,type SnapshotCaptureRecord} from '../storage/IndexedDBStorage';
 import {RequestScheduler} from '../tse/polling/RequestScheduler';
 import {TSE2022Provider} from '../tse/providers/TSE2022Provider';
 import {TSE2026Provider} from '../tse/providers/TSE2026Provider';
@@ -59,17 +62,26 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [cors,setCors]=useState<CorsDiagnostic|null>(null);
+  const [validation,setValidation]=useState<DataValidationReport|null>(null);
+  const [showCandidateAssociation,setShowCandidateAssociation]=useState(false);
   const [logs,setLogs]=useState<Array<Record<string,unknown>>>([]);
   const [counts,setCounts]=useState({rawFiles:0,results:0,municipalities:0});
   const [discovery,setDiscovery]=useState('');
   const [batch,setBatch]=useState<StateBatchProgress|null>(null);
   const [automatic,setAutomatic]=useState<AutomaticSyncState>(initialAutomaticSyncState);
   const automaticRef=useRef<AutomaticSyncService|null>(null);
+  const snapshotRef=useRef<AutomaticSnapshotService|null>(null);
+  const [snapshotDirectory,setSnapshotDirectory]=useState<SnapshotDirectoryHandle|null>(null);
+  const [snapshots,setSnapshots]=useState<SnapshotCaptureRecord[]>([]);
 
   useEffect(()=>{
     setAutomatic(initialAutomaticSyncState());
+    setDiscovery('');setValidation(null);setShowCandidateAssociation(false);
+    setSnapshotDirectory(null);
+    snapshotRef.current=new AutomaticSnapshotService(storage,provider.id,capture=>setSnapshots(current=>[...current.filter(item=>item.id!==capture.id),capture].sort((a,b)=>a.thresholdPercent-b.thresholdPercent)));
+    void storage.listSnapshotCaptures(provider.id).then(setSnapshots);
     return ()=>{automaticRef.current?.stop();automaticRef.current=null;};
-  },[provider]);
+  },[provider,storage]);
 
   async function run(action:()=>Promise<void>){
     setBusy(true);setError('');
@@ -110,6 +122,12 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
   async function persistAutomatic(r:ProviderResult){
     // URL/provider is the stable key: updates replace the current value consumed by projections and maps.
     await storage.saveResult(rawRecord(r),r.normalized);
+    await snapshotRef.current?.observeNational(r.normalized);
+  }
+
+  async function selectSnapshotDirectory(){
+    try{const directory=await chooseSnapshotDirectory();if(directory)setSnapshotDirectory(directory);else setError('Este navegador não permite escolher uma pasta. Os snapshots serão baixados pelo navegador.');}
+    catch(error){if(error instanceof DOMException&&error.name==='AbortError')return;setError(error instanceof Error?error.message:String(error));}
   }
 
   async function load(){
@@ -125,6 +143,15 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
     await run(async()=>{await downloadStatesInQueue(provider,office,UFS,r=>persist(r,false),setBatch);});
   }
 
+  async function validateData(){
+    await run(async()=>{
+      const report=await new DataValidationService().run(provider);
+      await storage.saveMunicipalities(report.municipalities);
+      setValidation(report);
+      setCounts(await storage.count());
+    });
+  }
+
   function toggleAutomatic(){
     if(automatic.enabled){automaticRef.current?.stop();return;}
     if(!(provider instanceof TSE2026Provider)){
@@ -136,6 +163,7 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
       persistResult:persistAutomatic,
       persistMunicipalities:list=>storage.saveMunicipalities(list),
       persistState:state=>storage.saveAutomaticSyncState(state),
+      completeSyncBlock:async()=>{await snapshotRef.current?.completeAfterSync(snapshotDirectory);},
       onState:state=>{
         setAutomatic(state);
         if(state.phase==='POLLING'||(state.total>0&&state.completed===state.total))void storage.count().then(setCounts);
@@ -165,19 +193,27 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
           {scope==='MUNICIPALITY'&&<button className="secondary" onClick={loadMunicipalities}>Carregar municípios</button>}
           <button onClick={load} disabled={busy||scope==='MUNICIPALITY'&&!municipalityCode}>{busy?'Aguarde…':'Carregar resultado'}</button>
           <button className="secondary" onClick={()=>run(async()=>setCors(await new CorsDiagnosticService(transport).run(profile==='2026_SIMULATION'?simulationBase.replace(/\/$/,'')+'/simulado2026/comum/config/ele-c.json':undefined)))}>Diagnóstico CORS</button>
+          {profile!=='2022_OFFICIAL'&&<button className="secondary" onClick={validateData} disabled={controlsDisabled||!discovery}>Validação dos dados</button>}
+          {validation&&discovery&&<button className="secondary" onClick={()=>setShowCandidateAssociation(value=>!value)}>{showCandidateAssociation?'Fechar associação':'Associar Candidatos'}</button>}
         </div>
       </fieldset>
       {scope==='BRASIL'&&<div className="state-batch"><button onClick={loadAllStates} disabled={controlsDisabled}>baixar todos estados em fila</button>{batch&&<div role="status"><p>{batch.current?`Baixando ${batch.current}…`:'Fila concluída.'} {batch.completed}/{batch.total} UFs processadas · {batch.saved} salvas · {batch.errors.length} falhas</p><progress value={batch.completed} max={batch.total}/>{batch.errors.length>0&&<ul>{batch.errors.map(item=><li key={item.uf}>{item.uf}: {item.message}</li>)}</ul>}</div>}</div>}
-      {profile!=='2022_OFFICIAL'&&<AutomaticMode state={automatic} onToggle={toggleAutomatic}/>}
+      {profile!=='2022_OFFICIAL'&&<AutomaticMode state={automatic} onToggle={toggleAutomatic} onChooseDirectory={selectSnapshotDirectory} directoryName={snapshotDirectory?.name??null} snapshots={snapshots}/>}
       {error&&<p className="error">{error}</p>}
     </section>
+    {validation&&<DataValidationPanel report={validation}/>}
+    {showCandidateAssociation&&<CandidateIdentityPanel storage={storage}/>}
     <section className="panel"><nav>{(['RESUMO','RAW JSON','NORMALIZADO'] as const).map(value=><button className={tab===value?'active':''} onClick={()=>setTab(value)} key={value}>{value}</button>)}</nav>{tab==='RESUMO'&&<Summary result={result}/>} {tab==='RAW JSON'&&<pre>{raw?JSON.stringify(raw,null,2):'Nenhum arquivo.'}</pre>}{tab==='NORMALIZADO'&&<pre>{result?JSON.stringify(result,null,2):'Nenhum resultado.'}</pre>}</section>
   </>;
 }
 
-function AutomaticMode({state,onToggle}:{state:AutomaticSyncState;onToggle:()=>void}){
+function DataValidationPanel({report}:{report:DataValidationReport}){return <section className="panel validation-panel"><header><div><span className="eyebrow">EA12 DO TSE × BASE HISTÓRICA 2022</span><h2>Validação dos dados</h2><p>Executada às {new Date(report.checkedAt).toLocaleTimeString('pt-BR')} · códigos TSE e IBGE são comparados antes de qualquer estimativa.</p></div><span className={`badge ${report.issues.length?'validation-badge-warning':''}`}>{report.issues.length?`${report.issues.length} PENDÊNCIAS`:'CADASTRO CONSISTENTE'}</span></header><div className="validation-stats"><Stat label="Municípios no TSE" value={String(report.currentCount)}/><Stat label="Base histórica" value={String(report.historicalCount)}/><Stat label="Código TSE igual" value={String(report.exactMatches)}/><Stat label="IBGE conciliado" value={String(report.ibgeMatches)}/></div>{report.issues.length===0?<p className="note">Nenhuma divergência cadastral foi encontrada.</p>:<div className="table-wrap"><table><thead><tr><th>Situação</th><th>UF</th><th>Município no TSE</th><th>Código TSE atual</th><th>IBGE</th><th>Registro histórico</th><th>Código TSE 2022</th></tr></thead><tbody>{report.issues.map(issue=><tr key={`${issue.kind}:${issue.uf}:${issue.current?.code??issue.historical?.tseCode}`}><td><span className="validation-kind">{validationLabel(issue.kind)}</span></td><td>{issue.uf}</td><td>{issue.current?.name??'—'}</td><td>{issue.current?.code??'—'}</td><td>{issue.current?.ibgeCode??issue.historical?.ibgeCode??'—'}</td><td>{issue.historical?.name??'—'}</td><td>{issue.historical?.tseCode??'—'}</td></tr>)}</tbody></table></div>}</section>}
+
+function validationLabel(kind:DataValidationReport['issues'][number]['kind']){return({TSE_CODE_CHANGED:'Código TSE alterado; IBGE confere',MISSING_HISTORY:'Sem base histórica',MISSING_TSE:'Ausente no EA12 atual',NAME_MATCH_ONLY:'Possível correspondência por nome'})[kind]}
+
+function AutomaticMode({state,onToggle,onChooseDirectory,directoryName,snapshots}:{state:AutomaticSyncState;onToggle:()=>void;onChooseDirectory:()=>void;directoryName:string|null;snapshots:SnapshotCaptureRecord[]}){
   const showProgress=state.enabled&&state.phase!=='POLLING'&&state.total>0;
-  return <div className={`automatic-mode ${state.enabled?'automatic-mode-on':''}`}>
+  return <><div className={`automatic-mode ${state.enabled?'automatic-mode-on':''}`}>
     <button className="automatic-button" onClick={onToggle}>{state.enabled?'Desligar modo automático':'Modo automático'}</button>
     <label className="polling-switch"><input type="checkbox" role="switch" checked={state.pollingEnabled} onChange={onToggle}/><span>polling ligado</span></label>
     <div className="automatic-feedback" role="status">
@@ -185,7 +221,7 @@ function AutomaticMode({state,onToggle}:{state:AutomaticSyncState;onToggle:()=>v
       {showProgress&&<><small>{state.completed.toLocaleString('pt-BR')} / {state.total.toLocaleString('pt-BR')} · {state.saved.toLocaleString('pt-BR')} salvos · {state.errors} falhas</small><progress value={state.completed} max={state.total}/></>}
       {state.phase==='POLLING'&&<small>Verificação inteligente a cada 10 segundos via EA14 → EA15 → EA20{state.lastCheckedAt?` · última: ${new Date(state.lastCheckedAt).toLocaleTimeString('pt-BR')}`:''}</small>}
     </div>
-  </div>;
+  </div><div className="snapshot-controls"><button className="secondary" onClick={onChooseDirectory}>Escolher pasta dos snapshots</button><span>{directoryName?`Pasta: ${directoryName}`:'Sem pasta escolhida: o navegador fará o download dos arquivos.'}</span>{snapshots.length>0&&<ul>{snapshots.slice(-5).reverse().map(snapshot=><li key={snapshot.id}><strong>p{snapshot.thresholdPercent} · real p{snapshot.observedNationalPercent.toFixed(2)}</strong> · {snapshot.fileName} · {snapshot.presidentialMunicipalityResults}/{snapshot.expectedMunicipalities} municípios · {snapshot.delivery==='folder'?'salvo na pasta':'download iniciado'}{snapshot.skippedThresholds.length?` · marcos pulados: p${snapshot.skippedThresholds.join(', p')}`:''}</li>)}</ul>}</div></>;
 }
 
 function DebugPage({storage}:{storage:IndexedDBStorage}){

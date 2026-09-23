@@ -22,17 +22,18 @@ describe('modo automático',()=>{
     const states:Array<{phase:string;enabled:boolean}>=[];
     const persistResult=vi.fn(async()=>{});
     const persistMunicipalities=vi.fn(async()=>{});
-    const persistState=vi.fn(async()=>{});
-    const service=new AutomaticSyncService(provider,'2026_SIMULATION',{persistResult,persistMunicipalities,persistState,onState:state=>states.push(state)},60_000,1);
+    const persistState=vi.fn(async()=>{}),completeSyncBlock=vi.fn(async()=>{calls.push('SNAPSHOT:COMPLETE')});
+    const service=new AutomaticSyncService(provider,'2026_SIMULATION',{persistResult,persistMunicipalities,persistState,completeSyncBlock,onState:state=>states.push(state)},60_000,1);
 
     await service.start();
     service.stop();
 
     expect(calls).toEqual([
       'PRESIDENT:BR','PRESIDENT:AC','GOVERNOR:AC',
-      'PRESIDENT:AC:01120','GOVERNOR:AC:01120',
+      'PRESIDENT:AC:01120','GOVERNOR:AC:01120','PRESIDENT:BR','SNAPSHOT:COMPLETE',
     ]);
-    expect(persistResult).toHaveBeenCalledTimes(5);
+    expect(persistResult).toHaveBeenCalledTimes(6);
+    expect(completeSyncBlock).toHaveBeenCalledOnce();
     expect(persistMunicipalities).toHaveBeenCalledTimes(2);
     expect(states.some(state=>state.phase==='POLLING'&&state.enabled)).toBe(true);
     expect(service.current.enabled).toBe(false);
@@ -46,7 +47,7 @@ describe('modo automático',()=>{
       getMunicipalities:async()=>[],getMunicipalityResult:vi.fn(),
       getEA14:async()=>({states:[],transport:{}}),getEA15:vi.fn(),
     } as unknown as TSE2026Provider;
-    const service=new AutomaticSyncService(provider,'2026_SIMULATION',{persistResult:async()=>{},persistMunicipalities:async()=>{},persistState:async()=>{},onState:()=>{}},60_000,1);
+    const service=new AutomaticSyncService(provider,'2026_SIMULATION',{persistResult:async()=>{},persistMunicipalities:async()=>{},persistState:async()=>{},completeSyncBlock:async()=>{},onState:()=>{}},60_000,1);
     await service.start();
     expect(provider.getStateResult).toHaveBeenCalledTimes(4);
     service.stop();

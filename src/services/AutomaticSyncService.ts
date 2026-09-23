@@ -21,6 +21,7 @@ export interface AutomaticSyncDependencies {
   persistResult:(result:ProviderResult)=>Promise<void>;
   persistMunicipalities:(municipalities:Municipality[])=>Promise<unknown>;
   persistState:(state:AutomaticSyncRecord)=>Promise<unknown>;
+  completeSyncBlock:()=>Promise<void>;
   onState:(state:AutomaticSyncState)=>void;
 }
 
@@ -89,6 +90,8 @@ export class AutomaticSyncService {
     if(!this.state.enabled)return;
     await this.runQueue(tasks);
     if(!this.state.enabled)return;
+    await this.refreshNationalAndCompleteBlock();
+    if(!this.state.enabled)return;
     this.startPolling();
   }
 
@@ -133,6 +136,13 @@ export class AutomaticSyncService {
     this.publish(true);
   }
 
+  private async refreshNationalAndCompleteBlock(){
+    this.update({message:'Fila municipal concluída. Atualizando Brasil e consolidando snapshot…'},true);
+    try{await this.dependencies.persistResult(await this.provider.getNationalResult(ElectionOffice.PRESIDENT));this.state.saved++;}
+    catch{this.state.errors++;}
+    await this.dependencies.completeSyncBlock();
+  }
+
   private startPolling(){
     const coordinator=new TSE2026PollingCoordinator(
       this.provider,
@@ -149,6 +159,7 @@ export class AutomaticSyncService {
       if(!this.state.enabled)return;
       this.update({message:'Verificando EA14 e EA15…'},true);
       const report=await coordinator.runCycle();
+      await this.dependencies.completeSyncBlock();
       const updates=report.changedStates.length+report.changedMunicipalities.length;
       this.update({
         lastCheckedAt:report.checkedAt,
