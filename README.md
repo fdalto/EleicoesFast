@@ -25,14 +25,12 @@ A aba **Mapa** visualiza as projeções salvas por UF ou município. A implement
 
 A [nota técnica sobre snapshots da apuração eleitoral](nota_tecnica_snapshots_apuracao_eleitoral.pdf) descreve o registro e a preservação das capturas de apuração usadas pelo projeto.
 
-## Análise e continuidade — 15/09/2026
+## Snapshots da apuração e pesquisa preditiva
 
-A revisão e as próximas etapas estão em [docs/DEVELOPMENT_STATUS.md](docs/DEVELOPMENT_STATUS.md). A infraestrutura de polling possui proteção contra ciclos sobrepostos e recuperação de downloads/gravações com falha; sua integração aos controles da interface ainda está pendente.
+O primeiro turno de 2026 será a base inicial para pesquisa e desenvolvimento de modelos preditivos. Durante a apuração, o projeto pretende baixar snapshots sucessivos dos resultados parciais — por exemplo, nos marcos de 10%, 20%, 30% até 100% — para medir como a composição geográfica dos votos muda ao longo do tempo.
 
-Auditoria do simulado de 15/09/2026: [compatibilidade e procedimento para o teste](docs/SIMULADO_2026_AUDIT.md). A página de desenvolvimento `audit-simulado.html` executa um diagnóstico manual limitado aos endpoints públicos de exemplo, sem polling ou gravação no IndexedDB.
+Cada coleta deverá preservar o JSON bruto, gerar uma base longitudinal normalizada por eleição, turno, cargo, snapshot, município e candidato, e produzir tabelas derivadas com deltas, votos novos, progresso local, estadual e nacional. Esse histórico permitirá auditoria, reprocessamento e comparação entre o resultado parcial e o resultado final.
 
-O perfil **2026 Simulation** já preenche a base publicada `https://resultados-sim.tse.jus.br/simulado` e utiliza o ambiente `simulado2026`. Eleições declaradas como BR no EA11 obtêm suas UFs pelo EA12 da respectiva eleição, antes das consultas estaduais e municipais.
+O baseline inicial será a extrapolação proporcional: usar o percentual já apurado de cada município como aproximação do seu resultado final. A partir dos dados do primeiro turno de 2026, poderemos medir o erro desse baseline e treinar modelos de correção histórica (swing) e de previsão dos votos remanescentes, incluindo municípios ainda pouco ou nada apurados.
 
-No perfil 2026, **Modo automático** carrega Presidente e Governador para Brasil, UFs e municípios; depois mantém polling seletivo a cada 10 segundos por EA14 → EA15 → EA20. O indicador ouro mostra a fase, o território atual, progresso e falhas. O modo continua ativo enquanto o usuário navega para Projeções ou Mapa, e pode ser interrompido pelo botão ou pela chave **polling ligado**.
-
-Na área **Resultado oficial**, ao selecionar **Brasil**, o botão **baixar todos estados em fila** consulta os resultados estaduais do cargo/provider atual e salva raw e normalizado no IndexedDB. A fila usa as UFs disponíveis no provider, exclui BR/exterior, processa uma UF por vez pela fila HTTP global e mostra progresso e falhas. O resultado nacional exibido permanece separado. Esses registros alimentam a projeção por UF; o método municipal exige coleta municipal própria.
+Os modelos futuros poderão combinar o resultado parcial e o ritmo de apuração com relações históricas entre município, capital e estado, além de características geográficas e socioeconômicas. O objetivo é estimar como os votos ainda não totalizados tendem a alterar o resultado final, sem tratar a apuração parcial como uma amostra aleatória do eleitorado. O desenho conceitual completo está na [nota técnica sobre snapshots da apuração eleitoral](nota_tecnica_snapshots_apuracao_eleitoral.pdf).
