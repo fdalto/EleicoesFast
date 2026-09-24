@@ -11,6 +11,7 @@ export class PollingManager {
 
   start() {
     if (this.running) return;
+    automaticLog('PollingManager: temporizador iniciado',{intervalMs:this.intervalMs});
     this.timer = setInterval(() => this.tick(), this.intervalMs);
     this.tick();
   }
@@ -18,12 +19,13 @@ export class PollingManager {
   pause() {
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
+    automaticLog('PollingManager: temporizador pausado');
   }
 
-  private tick() { void this.runNow().catch(() => { /* lastError exposes scheduled failures. */ }); }
+  private tick() { void this.runNow().catch(error => { automaticError('PollingManager: falha no ciclo agendado; a próxima tentativa continuará sendo programada',error); }); }
 
   runNow(): Promise<void> {
-    if (this.inFlight) return this.inFlight;
+    if (this.inFlight){automaticLog('PollingManager: ciclo anterior ainda em execução; aguardando sua conclusão');return this.inFlight;}
     this.inFlight = Promise.resolve().then(this.action).then(
       () => { this.lastError = null; },
       error => { this.lastError = error; throw error; },
@@ -31,3 +33,4 @@ export class PollingManager {
     return this.inFlight;
   }
 }
+import {automaticError,automaticLog} from '../../services/AutomaticDebugLog';

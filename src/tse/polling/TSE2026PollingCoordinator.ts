@@ -1,6 +1,7 @@
 import {ElectionOffice} from '../../election/normalized/ElectionOffice';
 import type {ProviderResult} from '../providers/TSEElectionProvider';
 import type {TSE2026Provider} from '../providers/TSE2026Provider';
+import {automaticError,automaticLog} from '../../services/AutomaticDebugLog';
 
 type Kind = 'federal' | 'state';
 type PollingProvider = Pick<TSE2026Provider, 'getEA14' | 'getEA15' | 'getNationalResult' | 'getStateResult' | 'getMunicipalityResult'>;
@@ -24,14 +25,16 @@ export class TSE2026PollingCoordinator {
   ) {}
 
   runCycle(): Promise<PollingCycleReport> {
-    if (this.inFlight) return this.inFlight;
+    if (this.inFlight){automaticLog('Coordenador: reutilizando ciclo de polling ainda em andamento');return this.inFlight;}
     this.inFlight = this.executeCycle().finally(() => { this.inFlight = null; });
     return this.inFlight;
   }
 
   private async executeCycle(): Promise<PollingCycleReport> {
     const report: PollingCycleReport = {checkedAt:new Date().toISOString(),changedStates:[],changedMunicipalities:[],updatedResults:0,errors:[],municipalSnapshotReady:true,municipalFailures:[]};
+    automaticLog('Coordenador: consultando EA14 federal e estadual',{checkedAt:report.checkedAt});
     await Promise.all((['federal', 'state'] as const).map(kind => this.monitor(kind, report)));
+    automaticLog('Coordenador: ciclo concluído',{changedStates:report.changedStates.length,changedMunicipalities:report.changedMunicipalities.length,updatedResults:report.updatedResults,errors:report.errors.length});
     return report;
   }
 
@@ -44,9 +47,11 @@ export class TSE2026PollingCoordinator {
       if (!this.initialized.has(kind)) {
         for (const item of changes) this.stateVersions.set(item.key, item.version);
         this.initialized.add(kind);
+        automaticLog('Coordenador: baseline EA14 registrado',{kind,states:changes.length});
         return;
       }
       const pending = changes.filter(item => this.stateVersions.get(item.key) !== item.version);
+      automaticLog('Coordenador: EA14 analisado',{kind,states:changes.length,pending:pending.length});
       // The national result belongs to the federal cycle, not to each changed UF.
       const nationalSaved = kind !== 'federal' || pending.length === 0 ||
         await this.save(() => this.provider.getNationalResult(ElectionOffice.PRESIDENT), report, 'Atualização nacional, baixando…');
@@ -55,7 +60,7 @@ export class TSE2026PollingCoordinator {
         const saved = await this.updateState(kind, state.uf, report);
         if (saved && nationalSaved) this.stateVersions.set(key, version);
       }
-    } catch (error) { const message=error instanceof Error?error.message:String(error);report.errors.push(message);if(kind==='federal'){report.municipalSnapshotReady=false;report.municipalFailures.push(`Consulta federal do TSE: ${message}`)} }
+    } catch (error) { const message=error instanceof Error?error.message:String(error);automaticError('Coordenador: falha ao consultar EA14',error,{kind});report.errors.push(message);if(kind==='federal'){report.municipalSnapshotReady=false;report.municipalFailures.push(`Consulta federal do TSE: ${message}`)} }
   }
 
   private async save(job: () => Promise<ProviderResult>, report: PollingCycleReport, activity?:string): Promise<boolean> {
@@ -66,6 +71,7 @@ export class TSE2026PollingCoordinator {
       report.updatedResults++;
       return true;
     } catch (error) {
+      automaticError('Coordenador: falha ao baixar ou persistir resultado alterado',error,{activity});
       report.errors.push(error instanceof Error ? error.message : String(error));
       return false;
     }
@@ -78,9 +84,11 @@ export class TSE2026PollingCoordinator {
     const saved = await Promise.all(offices.map(office => this.save(
       () => this.provider.getStateResult(uf, office), report, `Atualização na UF ${uf}, baixando ${office}…`,
     )));
+    automaticLog('Coordenador: resultados estaduais processados',{kind,uf,offices:offices.length,saved:saved.filter(Boolean).length});
     let complete = saved.every(Boolean);
     try {
       const ea15 = await this.provider.getEA15(uf, kind);
+      automaticLog('Coordenador: EA15 recebido',{kind,uf,municipalities:ea15.municipalities.length});
       for (const municipality of ea15.municipalities) {
         const key = `${kind}:${uf}:${municipality.code}`;
         const version = municipality.version ?? municipality.generatedAt ?? JSON.stringify(municipality.raw);
@@ -95,6 +103,7 @@ export class TSE2026PollingCoordinator {
         else {complete = false;if(kind==='federal'){report.municipalSnapshotReady=false;report.municipalFailures.push(`${uf}/${municipality.code}: falha ao baixar resultado municipal de Presidente`);}}
       }
     } catch (error) {
+      automaticError('Coordenador: falha ao consultar ou processar EA15',error,{kind,uf});
       report.errors.push(error instanceof Error ? error.message : String(error));
       complete = false;if(kind==='federal'){report.municipalSnapshotReady=false;report.municipalFailures.push(`${uf}: falha ao consultar a lista municipal do TSE`) }
     }

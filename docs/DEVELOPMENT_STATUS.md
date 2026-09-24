@@ -6,7 +6,7 @@ A aplicação possui providers 2022/2026, descoberta EA11, parsers separados, tr
 
 A interface oferece tanto consulta manual quanto **Modo automático** para os perfis 2026. Ao ser ativado pelo usuário, ele baixa Presidente Brasil/UFs, Governador por UF, inventários EA12 e resultados municipais de Presidente e Governador. A tela apresenta progresso, itens salvos e falhas; desligá-lo impede a criação de novas tarefas, sem cancelar as requisições já em voo.
 
-Depois da carga inicial, o modo automático inicia polling seletivo a cada 10 segundos: EA14 identifica alterações de UF, EA15 direciona municípios e EA20 atualiza somente os resultados necessários. O ciclo compartilha a execução em voo, persiste o estado operacional e recupera versões que falharam em download ou storage.
+Depois da carga inicial, o modo automático inicia polling seletivo a cada 60 segundos: EA14 identifica alterações de UF, EA15 direciona municípios e EA20 atualiza somente os resultados necessários. O ciclo compartilha a execução em voo, persiste o estado operacional e recupera versões que falharam em download ou storage.
 
 ## Snapshots
 

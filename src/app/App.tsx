@@ -7,6 +7,7 @@ import {ProjectionPage} from '../projection/ui/ProjectionPage';
 import {AutomaticSyncService,initialAutomaticSyncState,type AutomaticSyncState} from '../services/AutomaticSyncService';
 import {AutomaticSnapshotService,chooseSnapshotDirectory,type SnapshotDirectoryHandle} from '../services/AutomaticSnapshotService';
 import {AutomaticMunicipalSnapshotService} from '../services/AutomaticMunicipalSnapshotService';
+import {automaticError,automaticLog} from '../services/AutomaticDebugLog';
 import {CorsDiagnosticService,type CorsDiagnostic} from '../services/CorsDiagnosticService';
 import {DataValidationService,type DataValidationReport} from '../services/DataValidationService';
 import {IndexedDBStorage,type MunicipalSnapshotCaptureRecord,type SnapshotCaptureRecord} from '../storage/IndexedDBStorage';
@@ -72,7 +73,10 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
   const automaticRef=useRef<AutomaticSyncService|null>(null);
   const snapshotRef=useRef<AutomaticSnapshotService|null>(null);
   const municipalSnapshotRef=useRef<AutomaticMunicipalSnapshotService|null>(null);
+  const wakeLockRef=useRef<{released:boolean;release:()=>Promise<void>;addEventListener:(type:'release',listener:()=>void)=>void}|null>(null);
+  const snapshotDirectoryRef=useRef<SnapshotDirectoryHandle|null>(null);
   const [snapshotDirectory,setSnapshotDirectory]=useState<SnapshotDirectoryHandle|null>(null);
+  const [wakeLockActive,setWakeLockActive]=useState(false);
   const [snapshots,setSnapshots]=useState<SnapshotCaptureRecord[]>([]);
   const [municipalSnapshots,setMunicipalSnapshots]=useState<MunicipalSnapshotCaptureRecord[]>([]);
 
@@ -80,6 +84,7 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
     setAutomatic(initialAutomaticSyncState());
     setDiscovery('');setValidation(null);setShowCandidateAssociation(false);
     setSnapshotDirectory(null);
+    snapshotDirectoryRef.current=null;
     snapshotRef.current=new AutomaticSnapshotService(storage,provider.id,capture=>setSnapshots(current=>[...current.filter(item=>item.id!==capture.id),capture].sort((a,b)=>a.thresholdPercent-b.thresholdPercent)));
     municipalSnapshotRef.current=new AutomaticMunicipalSnapshotService(storage,provider.id,capture=>setMunicipalSnapshots(current=>[...current.filter(item=>item.id!==capture.id),capture].sort((a,b)=>a.thresholdPercent-b.thresholdPercent)));
     void storage.listSnapshotCaptures(provider.id).then(setSnapshots);
@@ -87,6 +92,44 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
     void loadLiveOfficial();
     return ()=>{automaticRef.current?.stop();automaticRef.current=null;};
   },[provider,storage]);
+
+  useEffect(()=>{
+    if(!automatic.enabled){
+      const wakeLock=wakeLockRef.current;
+      wakeLockRef.current=null;
+      setWakeLockActive(false);
+      if(wakeLock&&!wakeLock.released)void wakeLock.release();
+      return;
+    }
+    let cancelled=false;
+    const requestWakeLock=async()=>{
+      const wakeLockApi=(navigator as unknown as {wakeLock?:{request:(type:'screen')=>Promise<{released:boolean;release:()=>Promise<void>;addEventListener:(type:'release',listener:()=>void)=>void}>}}).wakeLock;
+      if(!wakeLockApi)return;
+      try{
+        const wakeLock=await wakeLockApi.request('screen');
+        if(cancelled){void wakeLock.release();return;}
+        wakeLockRef.current=wakeLock;
+        setWakeLockActive(true);
+        wakeLock.addEventListener('release',()=>{
+          if(wakeLockRef.current===wakeLock){wakeLockRef.current=null;setWakeLockActive(false);}
+        });
+      }catch{setWakeLockActive(false);}
+    };
+    const handleVisibilityChange=()=>{
+      automaticLog('Visibilidade da página alterada; o polling continua ativo',{visibilityState:document.visibilityState});
+      if(document.visibilityState==='visible'&&!wakeLockRef.current)void requestWakeLock();
+    };
+    void requestWakeLock();
+    document.addEventListener('visibilitychange',handleVisibilityChange);
+    return ()=>{
+      cancelled=true;
+      document.removeEventListener('visibilitychange',handleVisibilityChange);
+      const wakeLock=wakeLockRef.current;
+      wakeLockRef.current=null;
+      setWakeLockActive(false);
+      if(wakeLock&&!wakeLock.released)void wakeLock.release();
+    };
+  },[automatic.enabled]);
 
   async function loadLiveOfficial(){
     const [rawFiles,results]=await Promise.all([storage.rawFiles.where('provider').equals(provider.id).toArray(),storage.results.toArray()]);
@@ -136,14 +179,29 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
 
   async function persistAutomatic(r:ProviderResult){
     // URL/provider is the stable key: updates replace the current value consumed by projections and maps.
+    if(r.normalized.scope==='BRASIL')automaticLog('Persistindo resultado nacional automático',{url:r.transport.url,status:r.transport.status,bytes:r.transport.bytes});
     await storage.saveResult(rawRecord(r),r.normalized);
     if(r.normalized.office===ElectionOffice.PRESIDENT&&r.normalized.scope==='BRASIL')setLiveOfficial(r.normalized);
     await snapshotRef.current?.observeNational(r.normalized);
+    if(r.normalized.scope==='BRASIL')automaticLog('Resultado nacional automático persistido');
   }
 
-  async function selectSnapshotDirectory(){
-    try{const directory=await chooseSnapshotDirectory();if(directory)setSnapshotDirectory(directory);else setError('Este navegador não permite escolher uma pasta. Os snapshots serão baixados pelo navegador.');}
-    catch(error){if(error instanceof DOMException&&error.name==='AbortError')return;setError(error instanceof Error?error.message:String(error));}
+  async function selectSnapshotDirectory():Promise<boolean>{
+    setError('');
+    try{
+      automaticLog('Solicitando escolha da pasta de snapshots');
+      const directory=await chooseSnapshotDirectory();
+      if(!directory){setError('Este navegador não permite escolher uma pasta. O modo automático exige Chrome ou Edge para salvar os snapshots na pasta escolhida.');return false;}
+      snapshotDirectoryRef.current=directory;
+      setSnapshotDirectory(directory);
+      automaticLog('Pasta de snapshots selecionada',{directory:directory.name});
+      return true;
+    }catch(error){
+      if(error instanceof DOMException&&error.name==='AbortError'){automaticLog('Escolha da pasta de snapshots cancelada pelo usuário');return false;}
+      automaticError('Falha ao escolher pasta de snapshots',error);
+      setError(error instanceof Error?error.message:String(error));
+      return false;
+    }
   }
 
   async function load(){
@@ -163,18 +221,26 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
     });
   }
 
-  function toggleAutomatic(){
-    if(automatic.enabled){automaticRef.current?.stop();return;}
+  async function toggleAutomatic(){
+    if(automatic.enabled){automaticLog('Solicitação para desligar modo automático');automaticRef.current?.stop();return;}
     if(!(provider instanceof TSE2026Provider)){
       setError('O modo automático está disponível para os perfis 2026.');
       return;
     }
+    // A new user gesture is required on every activation so snapshots never fall back to downloads.
+    if(!await selectSnapshotDirectory()){automaticLog('Modo automático não iniciado porque a pasta não foi confirmada');return;}
     setError('');
     const service=new AutomaticSyncService(provider,provider.id,{
       persistResult:persistAutomatic,
       persistMunicipalities:list=>storage.saveMunicipalities(list),
       persistState:state=>storage.saveAutomaticSyncState(state),
-      completeSyncBlock:async municipalFailures=>{await snapshotRef.current?.completeAfterSync(snapshotDirectory);await municipalSnapshotRef.current?.completeAfterMunicipalSync(snapshotDirectory,municipalFailures);},
+      completeSyncBlock:async municipalFailures=>{
+        const directory=snapshotDirectoryRef.current;
+        automaticLog('Iniciando consolidação de snapshots',{municipalFailures:municipalFailures.length,directory:directory?.name??null});
+        await snapshotRef.current?.completeAfterSync(directory);
+        await municipalSnapshotRef.current?.completeAfterMunicipalSync(directory,municipalFailures);
+        automaticLog('Consolidação de snapshots finalizada');
+      },
       onState:state=>{
         setAutomatic(state);
         if(state.phase==='POLLING'||(state.total>0&&state.completed===state.total))void storage.count().then(setCounts);
@@ -213,7 +279,7 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
       </fieldset>
       <OfficialProgressBox result={liveOfficial}/>
       </div>
-      {profile!=='2022_OFFICIAL'&&<AutomaticMode state={automatic} onToggle={toggleAutomatic} onChooseDirectory={selectSnapshotDirectory} directoryName={snapshotDirectory?.name??null} snapshots={snapshots} municipalSnapshots={municipalSnapshots}/>}
+      {profile!=='2022_OFFICIAL'&&<AutomaticMode state={automatic} onToggle={toggleAutomatic} onChooseDirectory={selectSnapshotDirectory} directoryName={snapshotDirectory?.name??null} wakeLockActive={wakeLockActive} snapshots={snapshots} municipalSnapshots={municipalSnapshots}/>}
       {error&&<p className="error">{error}</p>}
     </section>
     {validation&&<DataValidationPanel report={validation}/>}
@@ -226,17 +292,18 @@ function DataValidationPanel({report}:{report:DataValidationReport}){return <sec
 
 function validationLabel(kind:DataValidationReport['issues'][number]['kind']){return({TSE_CODE_CHANGED:'Código TSE alterado; IBGE confere',MISSING_HISTORY:'Sem base histórica',MISSING_TSE:'Ausente no EA12 atual',NAME_MATCH_ONLY:'Possível correspondência por nome'})[kind]}
 
-function AutomaticMode({state,onToggle,onChooseDirectory,directoryName,snapshots,municipalSnapshots}:{state:AutomaticSyncState;onToggle:()=>void;onChooseDirectory:()=>void;directoryName:string|null;snapshots:SnapshotCaptureRecord[];municipalSnapshots:MunicipalSnapshotCaptureRecord[]}){
+function AutomaticMode({state,onToggle,onChooseDirectory,directoryName,wakeLockActive,snapshots,municipalSnapshots}:{state:AutomaticSyncState;onToggle:()=>Promise<void>;onChooseDirectory:()=>Promise<boolean>;directoryName:string|null;wakeLockActive:boolean;snapshots:SnapshotCaptureRecord[];municipalSnapshots:MunicipalSnapshotCaptureRecord[]}){
   const showProgress=state.enabled&&state.phase!=='POLLING'&&state.total>0;
   return <><div className={`automatic-mode ${state.enabled?'automatic-mode-on':''}`}>
-    <button className="automatic-button" onClick={onToggle}>{state.enabled?'Desligar modo automático':'Modo automático'}</button>
-    <label className="polling-switch"><input type="checkbox" role="switch" checked={state.pollingEnabled} onChange={onToggle}/><span>polling ligado</span></label>
+    <button className="automatic-button" onClick={()=>void onToggle()}>{state.enabled?'Desligar modo automático':'Modo automático'}</button>
+    <label className="polling-switch"><input type="checkbox" role="switch" checked={state.pollingEnabled} onChange={()=>void onToggle()}/><span>polling ligado</span></label>
     <div className="automatic-feedback" role="status">
       <strong>{state.message}</strong>
       {showProgress&&<><small>{state.completed.toLocaleString('pt-BR')} / {state.total.toLocaleString('pt-BR')} · {state.saved.toLocaleString('pt-BR')} salvos · {state.errors} falhas</small><progress value={state.completed} max={state.total}/></>}
-      {state.phase==='POLLING'&&<small>Verificação inteligente a cada 10 segundos via EA14 → EA15 → EA20{state.lastCheckedAt?` · última: ${new Date(state.lastCheckedAt).toLocaleTimeString('pt-BR')}`:''}</small>}
+      {state.phase==='POLLING'&&<small>Verificação inteligente a cada 60 segundos via EA14 → EA15 → EA20{state.lastCheckedAt?` · última: ${new Date(state.lastCheckedAt).toLocaleTimeString('pt-BR')}`:''}</small>}
+      {state.enabled&&<small>A coleta continua mesmo com a página em segundo plano. {wakeLockActive?'A tela fica ativa enquanto a aba estiver visível.':'A proteção contra bloqueio de tela só fica disponível com a aba visível.'}</small>}
     </div>
-  </div><div className="snapshot-controls"><button className="secondary" onClick={onChooseDirectory}>Escolher pasta dos snapshots</button><span>{directoryName?`Pasta: ${directoryName}`:'Sem pasta escolhida: o navegador fará o download dos arquivos.'}</span>{snapshots.length>0&&<ul>{snapshots.slice(-5).reverse().map(snapshot=><li key={snapshot.id}><strong>Presidencial p{snapshot.thresholdPercent} · real p{snapshot.observedNationalPercent.toFixed(2)}</strong> · {snapshot.fileName} · {snapshot.presidentialMunicipalityResults}/{snapshot.expectedMunicipalities} municípios · {snapshot.delivery==='folder'?'salvo na pasta':'download iniciado'}{snapshot.skippedThresholds.length?` · marcos pulados: p${snapshot.skippedThresholds.join(', p')}`:''}</li>)}</ul>}{municipalSnapshots.length>0&&<ul>{municipalSnapshots.slice(-5).reverse().map(snapshot=><li key={snapshot.id}><strong>Municipal p{snapshot.thresholdPercent} · real p{snapshot.observedMunicipalCoveragePercent.toFixed(2)}</strong> · {snapshot.fileName} · {snapshot.downloadedMunicipalities}/{snapshot.expectedMunicipalities} municípios · {snapshot.countedSections.toLocaleString('pt-BR')}/{snapshot.totalSections.toLocaleString('pt-BR')} urnas · {snapshot.municipalFailures.length?`${snapshot.municipalFailures.length} falha(s) registrada(s)`:'sem falhas'} · {snapshot.delivery==='folder'?'salvo na pasta':'download iniciado'}{snapshot.skippedThresholds.length?` · marcos pulados: p${snapshot.skippedThresholds.join(', p')}`:''}</li>)}</ul>}</div></>;
+  </div><div className="snapshot-controls"><button className="secondary" onClick={()=>void onChooseDirectory()}>Escolher pasta dos snapshots</button><span>{directoryName?`Pasta atual: ${directoryName}. Ao ligar o modo automático, a pasta será confirmada novamente.`:'Escolha uma pasta para poder ligar o modo automático.'}</span>{snapshots.length>0&&<ul>{snapshots.slice(-5).reverse().map(snapshot=><li key={snapshot.id}><strong>Presidencial p{snapshot.thresholdPercent} · real p{snapshot.observedNationalPercent.toFixed(2)}</strong> · {snapshot.fileName} · {snapshot.presidentialMunicipalityResults}/{snapshot.expectedMunicipalities} municípios · {snapshot.delivery==='folder'?'salvo na pasta':'download iniciado'}{snapshot.skippedThresholds.length?` · marcos pulados: p${snapshot.skippedThresholds.join(', p')}`:''}</li>)}</ul>}{municipalSnapshots.length>0&&<ul>{municipalSnapshots.slice(-5).reverse().map(snapshot=><li key={snapshot.id}><strong>Municipal p{snapshot.thresholdPercent} · real p{snapshot.observedMunicipalCoveragePercent.toFixed(2)}</strong> · {snapshot.fileName} · {snapshot.downloadedMunicipalities}/{snapshot.expectedMunicipalities} municípios · {snapshot.countedSections.toLocaleString('pt-BR')}/{snapshot.totalSections.toLocaleString('pt-BR')} urnas · {snapshot.municipalFailures.length?`${snapshot.municipalFailures.length} falha(s) registrada(s)`:'sem falhas'} · {snapshot.delivery==='folder'?'salvo na pasta':'download iniciado'}{snapshot.skippedThresholds.length?` · marcos pulados: p${snapshot.skippedThresholds.join(', p')}`:''}</li>)}</ul>}</div></>;
 }
 
 function DebugPage({storage}:{storage:IndexedDBStorage}){
