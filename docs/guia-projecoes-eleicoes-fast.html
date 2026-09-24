@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Guia da seção Projeções — Eleições Fast</title>
+<style>
+@page { size: A4; margin: 18mm 16mm 17mm; }
+* { box-sizing: border-box; }
+body { color:#16221d; font-family: Arial, Helvetica, sans-serif; font-size:10.5pt; line-height:1.45; margin:0; }
+h1 { color:#0d5b3f; font-size:25pt; line-height:1.08; margin:0 0 8mm; }
+h2 { color:#0d5b3f; border-bottom:1px solid #b6d4c7; font-size:16pt; margin:0 0 4mm; padding-bottom:2mm; }
+h3 { color:#183d2d; font-size:12pt; margin:5mm 0 2mm; }
+p { margin:0 0 3mm; }
+ul { margin:2mm 0 4mm; padding-left:6mm; }
+li { margin:1.3mm 0; }
+.eyebrow { color:#4b7060; font-size:8.5pt; font-weight:bold; letter-spacing:1.2px; }
+.lead { font-size:13pt; line-height:1.5; }
+.page { min-height:255mm; page-break-after:always; position:relative; }
+.page:last-child { page-break-after:auto; }
+.page-no { bottom:0; color:#557466; font-size:8.5pt; position:absolute; right:0; }
+.callout { background:#eef7f1; border-left:4px solid #16835a; margin:4mm 0; padding:3mm 4mm; }
+.warning { background:#fff7e9; border-left:4px solid #c98812; margin:4mm 0; padding:3mm 4mm; }
+table { border-collapse:collapse; font-size:9.3pt; margin:3mm 0 4mm; width:100%; }
+th { background:#0d5b3f; color:white; font-weight:bold; text-align:left; }
+th,td { border:1px solid #bfd2c8; padding:2.3mm; vertical-align:top; }
+tr:nth-child(even) td { background:#f5faf7; }
+code { background:#edf2ef; color:#173b2a; font-family:"Courier New", monospace; font-size:9pt; padding:0.5mm 1mm; }
+.formula { background:#f5f8f6; border:1px solid #cfdbd4; font-family:"Courier New", monospace; margin:3mm 0; padding:3mm; }
+.small { font-size:9pt; }
+</style>
+</head>
+<body>
+<section class="page">
+  <div class="eyebrow">ELEIÇÕES FAST · DOCUMENTAÇÃO DE CONFERÊNCIA</div>
+  <h1>Guia da seção<br>Projeções eleitorais</h1>
+  <p class="lead">Este documento explica o que a tela faz hoje, quando utilizá-la e como as estimativas são calculadas. Seu objetivo é permitir a conferência do método antes do uso durante a apuração.</p>
+  <div class="callout"><strong>Ideia central.</strong> A seção não publica um resultado oficial e não altera os dados coletados. Ela cria uma cópia imutável dos resultados normalizados disponíveis no momento do cálculo e produz uma estimativa territorial derivada dessa cópia.</div>
+  <h2>Quando entrar na seção</h2>
+  <ul>
+    <li>Depois de baixar os resultados oficiais necessários: Brasil e UFs para <strong>Por estado</strong>; resultados municipais, UFs e a base municipal de 2022 para <strong>Por município</strong>.</li>
+    <li>Durante uma apuração parcial, quando se quer comparar a composição territorial já observada com uma extrapolação transparente.</li>
+    <li>Após uma atualização relevante dos dados. Cada novo cálculo cria uma execução independente; a anterior não é modificada.</li>
+  </ul>
+  <div class="warning"><strong>Não use a projeção como confirmação de vencedor.</strong> Ela depende de quais territórios já apuraram, da regularidade dos dados e, no método municipal, da estrutura de votos válidos de 2022. A própria tela sinaliza “PROJEÇÃO PARCIAL” quando há unidades sem base ou sem dados suficientes.</div>
+  <h2>O snapshot de cálculo</h2>
+  <p>Ao clicar em <strong>Calcular projeção</strong>, o sistema seleciona os registros mais recentes de cada território para a eleição, turno e cargo escolhidos. A cópia guarda o instante de captura, as chaves das fontes e o menor e maior horário de coleta. O cálculo e as exportações permanecem ligados a esse snapshot, mesmo que a coleta continue depois.</p>
+  <p class="small">Em resultados de candidato, votos destinados a candidaturas anuladas são excluídos da projeção. A comparação usa votos válidos, não o percentual editorial divulgado pelo TSE.</p>
+  <span class="page-no">1 / 5</span>
+</section>
+
+<section class="page">
+  <div class="eyebrow">COMANDOS E LEITURA OPERACIONAL</div>
+  <h2>O que faz cada controle</h2>
+  <table>
+    <thead><tr><th>Controle</th><th>O que faz</th><th>Uso recomendado</th></tr></thead>
+    <tbody>
+      <tr><td><strong>POR ESTADO</strong></td><td>Seleciona o motor <em>UF → Brasil</em>. Cada UF é extrapolada a partir do próprio percentual de seções apuradas e depois somada.</td><td>Para Presidente, quando os resultados por UF estão disponíveis e se deseja uma leitura nacional simples.</td></tr>
+      <tr><td><strong>POR MUNICÍPIO</strong></td><td>Seleciona o motor <em>Município → UF → Brasil</em>. Estima cada município e depois agrega municípios por UF e Brasil.</td><td>Para analisar viés geográfico e o ritmo diferente de apuração entre municípios.</td></tr>
+      <tr><td><strong>Dados oficiais</strong></td><td>Escolhe eleição, turno, cargo e, quando aplicável, UF que serão copiados para o snapshot.</td><td>Escolha a mesma eleição e turno dos dados recém-coletados. Sem uma opção, não há conjunto normalizado suficiente.</td></tr>
+      <tr><td><strong>Método</strong></td><td>Mostra o caminho de agregação. É informativo e é alterado pelos botões Por estado/Por município.</td><td>Confirme-o antes de calcular; ele define a fórmula e a granularidade.</td></tr>
+      <tr><td><strong>Calcular projeção</strong></td><td>Captura os dados, executa o motor escolhido, grava a execução no IndexedDB e mostra gráficos/tabelas.</td><td>Use depois de conferir a coleta. Pode ser repetido após nova atualização do TSE.</td></tr>
+      <tr><td><strong>Atualizar dados disponíveis</strong></td><td>Relê os conjuntos oficiais normalizados e as associações de candidatos salvas no navegador.</td><td>Use se novos dados foram baixados enquanto a tela estava aberta.</td></tr>
+      <tr><td><strong>Exportação completa</strong></td><td>Baixa JSON com parâmetros, snapshot, cobertura, agregados, todas as unidades, alertas e erros.</td><td>Auditoria, reprodução e análise técnica.</td></tr>
+      <tr><td><strong>Exportação compacta</strong></td><td>Baixa JSON resumido com Brasil, UFs e municípios, líder, margem, percentual apurado e candidatos.</td><td>Integração com outra visualização ou leitura mais leve.</td></tr>
+      <tr><td><strong>Detalhes</strong></td><td>Abre o registro completo da unidade territorial mostrada na decomposição.</td><td>Verificar fonte, base aplicada, alertas e erros de um estado ou município específico.</td></tr>
+    </tbody>
+  </table>
+  <h2>Indicadores acima dos resultados</h2>
+  <p><strong>Cobertura territorial</strong> é o número de unidades efetivamente projetáveis sobre o total. <strong>Unidades zeradas</strong> são unidades sem dados suficientes. <strong>Mediana apurada</strong> é a mediana do percentual de seções apuradas entre unidades projetadas, sem ponderação por tamanho. <strong>Situação</strong> informa se existem unidades sem projeção ou inválidas.</p>
+  <span class="page-no">2 / 5</span>
+</section>
+
+<section class="page">
+  <div class="eyebrow">SUBTIPO 1 · UF → BRASIL</div>
+  <h2>Como funciona “Por estado”</h2>
+  <p>Este motor é exclusivo para o cargo de <strong>Presidente</strong>. Ele cria 27 unidades, uma para cada UF. Para cada estado, usa o resultado oficial daquela UF e o percentual de seções apuradas informado pelo TSE.</p>
+  <div class="formula">fração apurada = percentual de seções apuradas / 100<br>votos válidos finais estimados da UF = votos válidos atuais da UF / fração apurada<br>votos projetados do candidato = votos atuais do candidato / fração apurada</div>
+  <p>Em seguida, o Brasil projetado é a soma dos votos projetados de todas as UFs projetáveis. O percentual nacional de cada candidato é recalculado sobre a soma dos votos válidos estimados das UFs — não é uma média simples dos percentuais estaduais.</p>
+  <h3>Exemplo simplificado</h3>
+  <p>Se uma UF tem 40% das seções apuradas, 1.000.000 votos válidos e 600.000 votos de uma candidatura, a estimativa da UF será 2.500.000 votos válidos e 1.500.000 votos para essa candidatura. Isso pressupõe que as seções ainda não apuradas tenham a mesma distribuição observada na UF até então.</p>
+  <h3>Regras e limites</h3>
+  <ul>
+    <li>Com 100% apurado, não há extrapolação: a unidade usa o resultado oficial atual.</li>
+    <li>Com 0% ou sem percentual apurado, a UF recebe “sem dados suficientes” e não entra no agregado projetado.</li>
+    <li>Dados inválidos — por exemplo, seções apuradas maiores que o total, votos válidos ausentes ou identificação inconsistente — são excluídos e geram alerta.</li>
+    <li>Menos de 10% é classificado como muito preliminar; de 10% a menos de 20%, preliminar; a partir de 20%, maior maturidade. A classificação não elimina o risco de viés de apuração.</li>
+  </ul>
+  <div class="warning"><strong>Interpretação correta:</strong> “Por estado” não prevê o voto futuro de cada seção. É uma extrapolação proporcional dentro de cada UF. Seu valor é reduzir o peso desproporcional de estados que apuram mais rápido, mas ela ainda pressupõe representatividade da parte já apurada em cada estado.</div>
+  <span class="page-no">3 / 5</span>
+</section>
+
+<section class="page">
+  <div class="eyebrow">SUBTIPO 2 · MUNICÍPIO → UF → BRASIL</div>
+  <h2>Como funciona “Por município”</h2>
+  <p>O motor municipal monta uma unidade por município conhecido na base atual ou histórica e depois soma os resultados por UF e Brasil. A base padrão de total é o número de <strong>votos válidos de 2022</strong> do mesmo cargo e turno, identificado por UF e código TSE do município.</p>
+  <table>
+    <thead><tr><th>Situação do município</th><th>Base de votos válidos finais</th><th>Distribuição entre candidatos</th><th>Rótulo mostrado</th></tr></thead>
+    <tbody>
+      <tr><td>100% de seções apuradas</td><td>Votos válidos oficiais atuais</td><td>Resultado municipal atual</td><td>Oficial 2026 completo</td></tr>
+      <tr><td>De 10% a menos de 100%, com histórico</td><td>Votos válidos municipais de 2022</td><td>Percentuais válidos atuais do próprio município</td><td>2022 × parcial municipal</td></tr>
+      <tr><td>Menos de 10%, com histórico</td><td>Votos válidos municipais de 2022</td><td>Percentuais válidos atuais da UF</td><td>2022 × parcial da UF</td></tr>
+      <tr><td>Sem histórico, mas com apuração municipal</td><td>Votos válidos atuais divididos pela fração de seções apuradas; limitado ao eleitorado quando necessário</td><td>Percentuais válidos atuais do município</td><td>Extrapolação por seções</td></tr>
+      <tr><td>Sem histórico e sem apuração válida</td><td>Não há estimativa</td><td>—</td><td>Sem base</td></tr>
+    </tbody>
+  </table>
+  <div class="formula">com histórico e 10% ou mais:<br>votos projetados do candidato no município = votos válidos de 2022 no município × participação válida atual do candidato no município</div>
+  <p>A regra dos 10% evita atribuir a distribuição de um município com poucas urnas ao seu total histórico. Antes desse ponto, a distribuição da UF é usada provisoriamente. Depois, o município passa a contribuir com sua própria distribuição parcial.</p>
+  <div class="warning"><strong>O que este método assume:</strong> o total de votos válidos de 2022 é uma base razoável para o tamanho relativo de cada município no pleito atual. Ele captura a composição geográfica do parcial atual, mas não incorpora mudanças de eleitorado, comparecimento ou candidatos entre 2022 e 2026.</div>
+  <span class="page-no">4 / 5</span>
+</section>
+
+<section class="page">
+  <div class="eyebrow">LEITURA DOS RESULTADOS</div>
+  <h2>“Distribuição projetada”</h2>
+  <p>O gráfico mostra, para cada candidatura, o percentual dos <strong>votos válidos estimados</strong> no agregado da execução. As barras são ordenadas pelos votos projetados. Não representam o percentual oficial divulgado pelo TSE e não devem ser lidas como contagem já apurada.</p>
+  <p>O total projetado vem da soma das bases territoriais: por estado, votos válidos atuais extrapolados pela fração apurada de cada UF; por município, sobretudo os totais válidos históricos de 2022, com exceções descritas na página anterior. Por isso, o gráfico pode se mover mesmo que o percentual nacional oficial varie pouco.</p>
+  <h2>“Oficial atual × projeção territorial”</h2>
+  <table>
+    <thead><tr><th>Coluna</th><th>Como interpretar</th></tr></thead>
+    <tbody>
+      <tr><td>Votos oficiais</td><td>Votos de candidatura no resultado oficial de Brasil (Presidente) ou da UF selecionada para o outro cargo.</td></tr>
+      <tr><td>% oficial comparável</td><td>Votos da candidatura divididos pelos votos válidos (<code>vv</code>) da mesma fonte. É a coluna adequada para comparar com a projeção.</td></tr>
+      <tr><td>% TSE divulgado</td><td>Percentual informado pelo TSE para a candidatura. É preservado para auditoria e pode divergir do comparável quando há votos anulados ou outra diferença de denominador.</td></tr>
+      <tr><td>Votos projetados / % projetado</td><td>Resultado derivado pelo método territorial escolhido; o percentual usa o total de votos válidos estimados da execução.</td></tr>
+      <tr><td>Diferença comparável</td><td><code>% projetado − % oficial comparável</code>, em pontos percentuais. Valor positivo indica projeção acima do parcial oficial comparável; negativo, abaixo.</td></tr>
+    </tbody>
+  </table>
+  <h3>Como conferir se a ideia corresponde ao método</h3>
+  <ul>
+    <li>Se a intenção era simplesmente “esticar” cada UF conforme suas próprias urnas, o subtipo Por estado corresponde a essa ideia.</li>
+    <li>Se a intenção era dar a cada município um peso aproximado pelo seu tamanho histórico e deixar a distribuição atual aparecer conforme as urnas locais avançam, o subtipo Por município corresponde a essa ideia.</li>
+    <li>Se a intenção era uma previsão estatística que corrija mudanças de eleitorado, abstenção, candidatos ou tendência entre eleições, este código ainda não faz isso; ele aplica regras territoriais auditáveis, não um modelo treinado.</li>
+  </ul>
+  <div class="callout"><strong>Para auditoria:</strong> use “Detalhes” em uma unidade e a Exportação completa. Ali estão a fonte, o horário de coleta, a porcentagem de seções, a base histórica, a regra aplicada, avisos e erros que explicam cada linha agregada.</div>
+  <span class="page-no">5 / 5</span>
+</section>
+</body>
+</html>

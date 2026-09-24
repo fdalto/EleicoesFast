@@ -4,7 +4,7 @@ import type {TSE2026Provider} from '../providers/TSE2026Provider';
 
 type Kind = 'federal' | 'state';
 type PollingProvider = Pick<TSE2026Provider, 'getEA14' | 'getEA15' | 'getNationalResult' | 'getStateResult' | 'getMunicipalityResult'>;
-export interface PollingCycleReport {checkedAt:string;changedStates:string[];changedMunicipalities:string[];updatedResults:number;errors:string[]}
+export interface PollingCycleReport {checkedAt:string;changedStates:string[];changedMunicipalities:string[];updatedResults:number;errors:string[];municipalSnapshotReady:boolean;municipalFailures:string[]}
 export interface PollingCoordinatorOptions {
   federalOffices?: ElectionOffice[];
   stateOffices?: ElectionOffice[];
@@ -30,7 +30,7 @@ export class TSE2026PollingCoordinator {
   }
 
   private async executeCycle(): Promise<PollingCycleReport> {
-    const report: PollingCycleReport = {checkedAt:new Date().toISOString(),changedStates:[],changedMunicipalities:[],updatedResults:0,errors:[]};
+    const report: PollingCycleReport = {checkedAt:new Date().toISOString(),changedStates:[],changedMunicipalities:[],updatedResults:0,errors:[],municipalSnapshotReady:true,municipalFailures:[]};
     await Promise.all((['federal', 'state'] as const).map(kind => this.monitor(kind, report)));
     return report;
   }
@@ -55,7 +55,7 @@ export class TSE2026PollingCoordinator {
         const saved = await this.updateState(kind, state.uf, report);
         if (saved && nationalSaved) this.stateVersions.set(key, version);
       }
-    } catch (error) { report.errors.push(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { const message=error instanceof Error?error.message:String(error);report.errors.push(message);if(kind==='federal'){report.municipalSnapshotReady=false;report.municipalFailures.push(`Consulta federal do TSE: ${message}`)} }
   }
 
   private async save(job: () => Promise<ProviderResult>, report: PollingCycleReport, activity?:string): Promise<boolean> {
@@ -92,11 +92,11 @@ export class TSE2026PollingCoordinator {
           `Atualização no município ${uf}/${municipality.code}, baixando ${office}…`,
         )));
         if (results.every(Boolean)) this.municipalityVersions.set(key, version);
-        else complete = false;
+        else {complete = false;if(kind==='federal'){report.municipalSnapshotReady=false;report.municipalFailures.push(`${uf}/${municipality.code}: falha ao baixar resultado municipal de Presidente`);}}
       }
     } catch (error) {
       report.errors.push(error instanceof Error ? error.message : String(error));
-      complete = false;
+      complete = false;if(kind==='federal'){report.municipalSnapshotReady=false;report.municipalFailures.push(`${uf}: falha ao consultar a lista municipal do TSE`) }
     }
     return complete;
   }

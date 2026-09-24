@@ -21,7 +21,7 @@ export interface AutomaticSyncDependencies {
   persistResult:(result:ProviderResult)=>Promise<void>;
   persistMunicipalities:(municipalities:Municipality[])=>Promise<unknown>;
   persistState:(state:AutomaticSyncRecord)=>Promise<unknown>;
-  completeSyncBlock:()=>Promise<void>;
+  completeSyncBlock:(municipalFailures:string[])=>Promise<void>;
   onState:(state:AutomaticSyncState)=>void;
 }
 
@@ -88,9 +88,9 @@ export class AutomaticSyncService {
       this.publish();
     }
     if(!this.state.enabled)return;
-    await this.runQueue(tasks);
+    const municipalFailures=await this.runQueue(tasks);
     if(!this.state.enabled)return;
-    await this.refreshNationalAndCompleteBlock();
+    await this.refreshNationalAndCompleteBlock(municipalFailures);
     if(!this.state.enabled)return;
     this.startPolling();
   }
@@ -116,7 +116,7 @@ export class AutomaticSyncService {
 
   private async runQueue(tasks:Array<{uf:string;municipality:Municipality;office:ElectionOffice}>){
     this.update({phase:'MUNICIPAL_RESULTS',message:'Montando fila municipal…',total:tasks.length,completed:0,saved:0,errors:0},true);
-    let index=0;
+    let index=0;const municipalFailures:string[]=[];
     const worker=async()=>{
       while(this.state.enabled){
         const task=tasks[index++];
@@ -127,20 +127,21 @@ export class AutomaticSyncService {
           const result=await this.provider.getMunicipalityResult(task.uf,task.municipality.code,task.office);
           await this.dependencies.persistResult(result);
           this.state.saved++;
-        }catch{this.state.errors++;}
+        }catch(error){this.state.errors++;if(task.office===ElectionOffice.PRESIDENT)municipalFailures.push(`${task.uf}/${task.municipality.code} · ${task.municipality.name}: ${error instanceof Error?error.message:String(error)}`);}
         this.state.completed++;
         this.publish();
       }
     };
     await Promise.all(Array.from({length:Math.min(this.workerCount,tasks.length)},()=>worker()));
     this.publish(true);
+    return municipalFailures;
   }
 
-  private async refreshNationalAndCompleteBlock(){
+  private async refreshNationalAndCompleteBlock(municipalFailures:string[]){
     this.update({message:'Fila municipal concluída. Atualizando Brasil e consolidando snapshot…'},true);
     try{await this.dependencies.persistResult(await this.provider.getNationalResult(ElectionOffice.PRESIDENT));this.state.saved++;}
     catch{this.state.errors++;}
-    await this.dependencies.completeSyncBlock();
+    await this.dependencies.completeSyncBlock(municipalFailures);
   }
 
   private startPolling(){
@@ -159,7 +160,7 @@ export class AutomaticSyncService {
       if(!this.state.enabled)return;
       this.update({message:'Verificando EA14 e EA15…'},true);
       const report=await coordinator.runCycle();
-      await this.dependencies.completeSyncBlock();
+      await this.dependencies.completeSyncBlock(report.municipalFailures);
       const updates=report.changedStates.length+report.changedMunicipalities.length;
       this.update({
         lastCheckedAt:report.checkedAt,

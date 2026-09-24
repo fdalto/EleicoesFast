@@ -27,7 +27,7 @@ A [nota técnica sobre snapshots da apuração eleitoral](nota_tecnica_snapshots
 
 ## Snapshots da apuração e pesquisa preditiva
 
-O primeiro turno de 2026 será a base inicial para pesquisa e desenvolvimento de modelos preditivos. Durante a apuração, o projeto pretende baixar snapshots sucessivos dos resultados parciais — por exemplo, nos marcos de 10%, 20%, 30% até 100% — para medir como a composição geográfica dos votos muda ao longo do tempo.
+O primeiro turno de 2026 será a base inicial para pesquisa e desenvolvimento de modelos preditivos. Durante a apuração, o projeto pretende baixar snapshots sucessivos dos resultados parciais — por exemplo, nos marcos de 10%, 20%, 30% até 100% — para medir como a composição geográfica dos votos muda ao longo do tempo. O gatilho presidencial existente continua registrando o conjunto completo. Em paralelo, ao concluir cada lote municipal indicado pelo TSE, o modo automático verifica se todos os municípios de Presidente foram baixados e então registra arquivos municipais separados a cada 10% de urnas municipais apuradas. Cada arquivo municipal preserva apenas essas linhas, a cobertura completa exigida e os totais de urnas e votos válidos presentes no recorte.
 
 Cada coleta deverá preservar o JSON bruto, gerar uma base longitudinal normalizada por eleição, turno, cargo, snapshot, município e candidato, e produzir tabelas derivadas com deltas, votos novos, progresso local, estadual e nacional. Esse histórico permitirá auditoria, reprocessamento e comparação entre o resultado parcial e o resultado final.
 
