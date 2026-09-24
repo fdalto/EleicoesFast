@@ -1,5 +1,7 @@
 # Auditoria do simulado de 15/09/2026
 
+> **Registro histórico.** Esta auditoria retrata o estado observado em 15/09/2026, incluindo pendências e a contagem de testes daquela data. Ela não substitui o estado atual do projeto, documentado em `DEVELOPMENT_STATUS.md` e `POLLING.md`.
+
 ## Conclusão
 
 O ambiente do TSE está acessível diretamente pelo navegador local. O site atual ainda NÃO está pronto para executar o roteiro completo de teste e polling pela interface. Há bloqueios reproduzidos com os arquivos reais, apesar dos 47 testes unitários existentes passarem na etapa anterior.
@@ -120,3 +122,7 @@ Sem essas correções, usar hoje a página auxiliar e o visualizador oficial par
 O perfil da interface agora usa `https://resultados-sim.tse.jus.br/simulado` como base predefinida e `simulado2026` como ambiente. O provider mantém a identificação `2026_SIMULATION`. Para eleições com abrangência BR no EA11, o bootstrap consulta o EA12 de cada eleição e usa suas UFs para validar consultas estaduais/municipais; os municípios são reutilizados em cache. O diagnóstico CORS consulta o EA11 do perfil ativo. Esses bloqueios de consulta foram corrigidos; as demais pendências de polling, projeções e histórico descritas acima permanecem.
 
 Validação: 50 testes passaram; build de produção gerado em `dist`.
+
+## Atualização posterior — 24/09/2026
+
+Após esta auditoria, a interface passou a conectar o **Modo automático** a `AutomaticSyncService`: há carga inicial com progresso, polling seletivo após essa carga e opção de interromper novas tarefas. Foram adicionados snapshots nacionais e municipais exportáveis, com escolha de pasta quando suportada pelo navegador. A suíte local passou a ter 71 testes. As conclusões e os bloqueios relatados nas seções anteriores devem, portanto, ser interpretados no contexto da data da auditoria.

@@ -1,6 +1,6 @@
 # Polling
 
-`PollingManager` executa ações em intervalo configurável (5 s desejados, sujeitos ao limite que o TSE confirmar no simulado). `RequestScheduler` limita concorrência e início de requisições por segundo, com retry, backoff exponencial e jitter. `TSE2026PollingCoordinator` consulta EA14 federal/estadual em paralelo, cria uma linha de base no primeiro ciclo e depois segue EA14 alterado → EA15 alterado → EA20 seletivo. Nunca inicia sincronização nacional automaticamente nem baixa municípios no ciclo inicial.
+`PollingManager` executa ações em intervalo configurável. No modo automático da aplicação, o intervalo é de 10 segundos. `RequestScheduler` limita concorrência e início de requisições por segundo, com retry, backoff exponencial e jitter. `TSE2026PollingCoordinator` consulta EA14 federal/estadual em paralelo, cria uma linha de base no primeiro ciclo e depois segue EA14 alterado → EA15 alterado → EA20 seletivo. Isoladamente, o coordenador não faz a carga inicial nacional ou municipal; essa etapa é responsabilidade de `AutomaticSyncService`.
 
 ## Modo automático
 
@@ -8,7 +8,7 @@ O modo automático da interface 2026 faz uma carga inicial ordenada: Presidente 
 
 Ao terminar, o coordenador estabelece a linha de base de EA14 federal/estadual e consulta a cada 10 segundos. Não existe índice/API de arquivos alterados. Conforme a orientação do TSE, EA14 indica as UFs e EA15 os municípios que provavelmente mudaram; somente então os EA20 de Presidente/Governador correspondentes são baixados. A pequena defasagem de CDN continua sendo tratada em ciclos posteriores. O TSE não publicou uma cadência recomendada além da obrigação de respeitar os limites; 10 segundos é uma escolha conservadora e configurável da aplicação.
 
-O botão permanece ativo ao navegar para Projeções e Mapa. Desligar o modo impede novas tarefas depois das requisições já em voo. O estado operacional é salvo em `pollingState`. Raw e normalizado usam uma chave estável por provider/URL, mantendo a versão mais recente para snapshots, projeções e mapas.
+O botão permanece ativo ao navegar para Projeções e Mapa. Desligar o modo impede novas tarefas depois das requisições já em voo. O estado operacional é salvo em `pollingState`. Raw e normalizado usam uma chave estável por provider/URL, mantendo a versão mais recente para snapshots, projeções e mapas. Ao fim de cada bloco de sincronização, o modo automático também avalia os snapshots nacional e municipal e exporta os marcos atingidos.
 
 ## Fila global
 
@@ -24,4 +24,4 @@ As versões são confirmadas apenas depois de downloads e callback de persistên
 
 `PollingManager` compartilha a execução entre timer e atualização manual. Erros automáticos ficam em `lastError`; erros de `runNow` também são propagados ao chamador. Pausar impede novos disparos, mas permite concluir o ciclo em voo. As versões do coordenador ficam em memória e são reiniciadas ao recriá-lo.
 
-Testes simulados: `pollingCoordinator.test.ts` e `pollingManager.test.ts`. A interface oficial ainda não conecta os controles de polling a esses serviços.
+Testes simulados: `pollingCoordinator.test.ts`, `pollingManager.test.ts`, `automaticSync.test.ts`, `automaticSnapshot.test.ts` e `automaticMunicipalSnapshot.test.ts`. A interface conecta o botão **Modo automático** a `AutomaticSyncService`; o polling só começa após a carga inicial e depende de ativação explícita do usuário.

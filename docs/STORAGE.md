@@ -1,3 +1,12 @@
 # Storage
 
-Dexie/IndexedDB possui stores conceituais `elections`, `states`, `municipalities`, `rawFiles`, `results`, `candidates` e `pollingState`. `rawFiles` guarda JSON exato e headers de cache; `results` guarda a visão comum. `localStorage` fica reservado a pequenas preferências.
+Dexie/IndexedDB possui as stores legadas `elections`, `states`, `municipalities`, `rawFiles`, `results`, `candidates` e `pollingState`, além de `projectionRuns`, `projectionResults`, `snapshotCaptures`, `municipalSnapshotCaptures` e `candidateIdentities`.
+
+- `rawFiles` guarda o JSON exato, headers de cache e metadados da resposta; `results` guarda a visão normalizada associada à mesma chave.
+- `municipalities` mantém o catálogo EA12 indexado por UF e código TSE.
+- `pollingState` conserva o estado operacional mais recente do modo automático.
+- `projectionRuns` e `projectionResults` guardam execuções derivadas separadas dos resultados oficiais.
+- `snapshotCaptures` e `municipalSnapshotCaptures` conservam os metadados das capturas exportadas; os arquivos exportados preservam o conteúdo raw e normalizado.
+- `candidateIdentities` guarda associações de apresentação de candidatos.
+
+`localStorage` fica reservado a pequenas preferências.

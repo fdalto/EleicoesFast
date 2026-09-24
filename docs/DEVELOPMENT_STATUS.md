@@ -1,33 +1,26 @@
-# Estado do desenvolvimento — 15/09/2026
+# Estado do desenvolvimento — 24/09/2026
 
-## Análise
+## Estado atual
 
-Foram lidos README.md, funcoes.md e os três prompts disponíveis na raiz (prompt.md, prompt2.md, prompt3.md). Não existe diretório prompt nesta cópia.
+A aplicação possui providers 2022/2026, descoberta EA11, parsers separados, transporte com fila global, persistência IndexedDB, projeções, exportações e mapa. O perfil 2026 Simulation usa a base e o ambiente configuráveis na interface; o perfil Official usa o endpoint oficial.
 
-A aplicação já possui providers 2022/2026, descoberta EA11, parsers separados, transporte com fila global, IndexedDB, motores de projeção, exportação e mapa. A documentação interna da arquitetura e dos módulos orienta a continuidade sem reexaminar a referência externa.
+A interface oferece tanto consulta manual quanto **Modo automático** para os perfis 2026. Ao ser ativado pelo usuário, ele baixa Presidente Brasil/UFs, Governador por UF, inventários EA12 e resultados municipais de Presidente e Governador. A tela apresenta progresso, itens salvos e falhas; desligá-lo impede a criação de novas tarefas, sem cancelar as requisições já em voo.
 
-A interface oficial oferece consultas manuais. Os serviços de polling existem, mas ainda não estão conectados aos controles da interface. Também permanecem etapas dos prompts: replay, sincronização em lote com progresso/cancelamento e seleção de turno na tela oficial.
+Depois da carga inicial, o modo automático inicia polling seletivo a cada 10 segundos: EA14 identifica alterações de UF, EA15 direciona municípios e EA20 atualiza somente os resultados necessários. O ciclo compartilha a execução em voo, persiste o estado operacional e recupera versões que falharam em download ou storage.
 
-Existe uma diferença documentada entre prompt3.md e o comportamento municipal atual: o prompt pede extrapolação pela fração apurada e ausência de estimativa em 0%; o código/documentação atuais adotam peso histórico 2022 e distribuição estadual abaixo de 10%. Essa fórmula existente foi preservada nesta etapa; a escolha dos métodos deve ficar explícita numa evolução própria.
+## Snapshots
 
-## Etapa implementada
+O modo automático também registra capturas exportáveis. O snapshot nacional é disparado pelos marcos de apuração presidencial nacional e contém o conjunto completo de resultados armazenados. O snapshot municipal é avaliado ao término de cada bloco municipal e usa a soma de urnas apuradas dos resultados municipais de Presidente; ele registra marcos de 10%, mesmo quando a cobertura municipal ainda é parcial, anotando cobertura, falhas e marcos pulados. Quando o navegador permite, o usuário pode escolher uma pasta de destino; caso contrário, o arquivo é baixado pelo navegador.
 
-Confiabilidade do polling, sem alterar URLs, parsers ou fórmulas:
+Os metadados dessas capturas ficam nas stores `snapshotCaptures` e `municipalSnapshotCaptures`. Os arquivos exportados preservam raw JSON, resultado normalizado e metadados de fonte para auditoria.
 
-- ciclos automáticos/manuais compartilham a operação em andamento;
-- erros automáticos ficam disponíveis para diagnóstico;
-- versões só são concluídas após download e persistência;
-- falhas de EA15/EA20 ou storage mantêm a UF pendente;
-- municípios vistos pela primeira vez após mudança de UF são buscados;
-- resultado nacional presidencial é solicitado uma vez por ciclo alterado.
+## Validação atual
 
-A linha de base inicial continua sem download nacional automático. Detalhes e limites em POLLING.md.
+A suíte local possui 71 testes, incluindo sincronização automática e snapshots municipais. A validação local não confirma, por si só, a disponibilidade do ambiente TSE, CORS ou a cadência que o TSE vier a determinar durante a apuração.
 
 ## Próximas etapas
 
-1. Integrar iniciar/pausar/atualizar agora à interface, com ciclo de vida por provider e relatório de erros.
-2. Implementar sincronização por UF com progresso e cancelamento usando a fila global.
-3. Adicionar replay explicitamente simulado para verificar ingestão, persistência e interface ponta a ponta.
-4. Tornar explícita a escolha entre a fórmula municipal simples do prompt e o método histórico existente.
-
-A validação desta etapa é local com providers simulados; não confirma disponibilidade atual do ambiente TSE nem CORS.
+1. Implementar replay explicitamente simulado para validar ingestão, persistência e interface ponta a ponta.
+2. Adicionar seleção de turno na tela oficial.
+3. Evoluir os snapshots para uma base longitudinal derivada, com deltas e métricas entre capturas.
+4. Tornar explícita, em uma evolução própria, a escolha entre a extrapolação municipal simples e o método histórico de votos válidos de 2022.
