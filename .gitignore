@@ -1,5 +1,8 @@
 # Projetos externos usados apenas como referência
 /references/
+/snapshots/
+/treinamento_ia/Downloads/
+*.zip
 node_modules/
 dist/
 *.tsbuildinfo

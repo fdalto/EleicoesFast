@@ -1,0 +1,17 @@
+# Dados eleitorais e artefatos reproduzíveis podem ser grandes ou conter licenças próprias.
+/.venv/
+data/raw/**
+data/normalized/*.parquet
+data/normalized/_staging/
+data/analytics/*.parquet
+data/runtime/*.parquet
+data/runtime/predictions_2026/**
+models/**/*.json
+models/**/*.joblib
+reports/**/*.json
+reports/**/*.csv
+__pycache__/
+*.pyc
+!data/**/.gitkeep
+!models/**/.gitkeep
+!reports/**/.gitkeep
