@@ -1,0 +1,6 @@
+export interface MunicipalityHistory {uf:string;municipalityCode:string;sections:number;validVotes:number;ptVotes:number;plVotes:number;otherVotes:number;estimatedPopulation:number;populationBand:1|2|3|4|5}
+interface MunicipalityHistoryFile {schemaVersion:string;reference:{year:number;round:number;officeCode:string};municipalities:MunicipalityHistory[]}
+let cached:Promise<Map<string,MunicipalityHistory>>|null=null;
+export function municipalityHistoryKey(uf:string,municipalityCode:string){return `${uf.toUpperCase()}:${municipalityCode.padStart(5,'0')}`}
+export async function loadMunicipalityHistory():Promise<Map<string,MunicipalityHistory>>{if(!cached)cached=fetch(`${import.meta.env.BASE_URL}data/geographic/municipality-history.json`).then(async response=>{if(!response.ok)throw new Error('Base municipal histórica de 2026 não encontrada. Execute npm run data:2026:size-bands.');const file=await response.json() as MunicipalityHistoryFile;if(file.schemaVersion!=='eleicoes-fast-municipality-history-v1'||file.reference.year!==2026||file.reference.round!==1||file.reference.officeCode!=='0001')throw new Error('Base municipal histórica incompatível com o GeographicSwingEngine.');return new Map(file.municipalities.map(row=>[municipalityHistoryKey(row.uf,row.municipalityCode),row]))});return cached}
+export function resetMunicipalityHistoryCache(){cached=null}

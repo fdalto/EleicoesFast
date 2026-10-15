@@ -10,3 +10,7 @@ Dexie/IndexedDB possui as stores legadas `elections`, `states`, `municipalities`
 - `candidateIdentities` guarda associações de apresentação de candidatos.
 
 `localStorage` fica reservado a pequenas preferências.
+
+## Fase geográfica (Dexie v6)
+
+A migração aditiva v6 cria `electionSections`, `sectionHistoricalVotes`, `sectionRoundMatch`, `sectionTallyState`, `sectionTallyEvents` e `geographicImportManifest`. Chaves incluem eleição, pleito, turno, cargo, UF, município, zona e seção. Partições históricas entram por `bulkPut` em lotes; EA16 atualiza o estado e só acrescenta evento quando status/evidência mudam. As stores anteriores não são removidas nem regravadas.

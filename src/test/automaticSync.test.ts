@@ -52,4 +52,19 @@ describe('modo automático',()=>{
     expect(provider.getStateResult).toHaveBeenCalledTimes(4);
     service.stop();
   });
+
+  it('coleta Exterior (ZZ) apenas para Presidente e suas localidades',async()=>{
+    const calls:string[]=[];
+    const provider={
+      bootstrap:async()=>({}),getStates:async()=>['ZZ'],getNationalResult:async()=>result('BR'),
+      getStateResult:async(uf:string,office:ElectionOffice)=>{calls.push(`${office}:${uf}`);return result(`${office}:${uf}`)},
+      getMunicipalities:async(uf:string,office:ElectionOffice)=>{calls.push(`LIST:${office}:${uf}`);return[{code:'99999',ibgeCode:null,name:'EXTERIOR',uf}]},
+      getMunicipalityResult:async(uf:string,code:string,office:ElectionOffice)=>{calls.push(`${office}:${uf}:${code}`);return result(`${office}:${uf}:${code}`)},
+      getEA14:async()=>({states:[],transport:{}}),getEA15:vi.fn(),
+    } as unknown as TSE2026Provider;
+    const service=new AutomaticSyncService(provider,'2026_SIMULATION',{persistResult:async()=>{},persistMunicipalities:async()=>{},persistState:async()=>{},completeSyncBlock:async()=>{},onState:()=>{}},60_000,1);
+    await service.start();
+    service.stop();
+    expect(calls).toEqual(['PRESIDENT:ZZ','LIST:PRESIDENT:ZZ','PRESIDENT:ZZ:99999']);
+  });
 });

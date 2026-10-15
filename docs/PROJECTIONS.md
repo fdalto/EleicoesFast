@@ -14,6 +14,10 @@ O motor municipal usa os votos válidos oficiais de 2022 como peso fixo até o m
 
 A base embarcada é `municipios-votos-validos-2022.json`. Ela foi produzida a partir do recurso oficial “Detalhe da apuração por município e zona”, somando `QT_TOTAL_VOTOS_VALIDOS` das zonas de cada município. A eleição suplementar 6278 e a abrangência exterior `ZZ` foram excluídas. O arquivo cobre 5.570 municípios: Presidente nos dois turnos, Governador no primeiro turno e nos 12 estados que tiveram segundo turno, e Senador no primeiro turno.
 
+## Exterior (`ZZ`)
+
+Para Presidente, `ZZ` é tratado como o território fictício **Exterior**. Suas localidades são baixadas do EA12/EA15 e entram na projeção municipal. Como não há base municipal histórica de 2022 para o exterior, cada localidade usa os votos válidos observados divididos pela fração de seções apuradas; em 100% de apuração, usa exatamente o total oficial. A soma dessas localidades integra os votos válidos finais projetados do Brasil. O exterior não é consultado para Governador ou Senador.
+
 ## Método simples v1
 
 Para cada unidade válida com fração apurada `f > 0`, estima-se `votosVálidosFinais = votosVálidosObservados / f` e `votosProjetadosCandidato = votosObservadosCandidato / f`. Em 100%, a estimativa é exatamente o observado. Cálculos permanecem em ponto flutuante; arredondamento ocorre só na apresentação/exportação compacta.

@@ -3,10 +3,12 @@ import type {AutomaticSyncRecord} from '../storage/IndexedDBStorage';
 import {PollingManager} from '../tse/polling/PollingManager';
 import {TSE2026PollingCoordinator} from '../tse/polling/TSE2026PollingCoordinator';
 import {automaticError,automaticLog} from './AutomaticDebugLog';
+import {EXTERIOR_UF,isProjectionTerritory} from '../projection/geography/TerritoryRegistry';
 import type {TSE2026Provider} from '../tse/providers/TSE2026Provider';
 import type {Municipality,ProviderResult} from '../tse/providers/TSEElectionProvider';
+import type {ElectionSection,SectionTallyState} from '../geographic/GeographicModels';
 
-export type AutomaticSyncPhase = 'IDLE'|'PRESIDENT_STATES'|'GOVERNOR_STATES'|'LISTING_MUNICIPALITIES'|'MUNICIPAL_RESULTS'|'POLLING'|'STOPPED'|'ERROR';
+export type AutomaticSyncPhase = 'IDLE'|'PRESIDENT_STATES'|'GOVERNOR_STATES'|'GEOGRAPHIC_SECTIONS'|'LISTING_MUNICIPALITIES'|'MUNICIPAL_RESULTS'|'POLLING'|'STOPPED'|'ERROR';
 export interface AutomaticSyncState {
   enabled:boolean;
   pollingEnabled:boolean;
@@ -23,12 +25,11 @@ export interface AutomaticSyncDependencies {
   persistMunicipalities:(municipalities:Municipality[])=>Promise<unknown>;
   persistState:(state:AutomaticSyncRecord)=>Promise<unknown>;
   completeSyncBlock:(municipalFailures:string[])=>Promise<void>;
+  persistGeographic?:(sections:ElectionSection[],states:SectionTallyState[])=>Promise<unknown>;
   onState:(state:AutomaticSyncState)=>void;
 }
 
 const INITIAL:AutomaticSyncState={enabled:false,pollingEnabled:false,phase:'IDLE',message:'Modo automático desligado',total:0,completed:0,saved:0,errors:0,lastCheckedAt:null};
-const VALID_UF=/^[A-Z]{2}$/;
-
 export class AutomaticSyncService {
   private state:AutomaticSyncState={...INITIAL};
   private polling?:PollingManager;
@@ -72,27 +73,29 @@ export class AutomaticSyncService {
     automaticLog('Carga inicial: solicitando configuração do TSE');
     await this.provider.bootstrap();
     if(!this.state.enabled)return;
-    const states=(await this.provider.getStates()).filter(uf=>VALID_UF.test(uf));
-    automaticLog('Carga inicial: configuração recebida',{states:states.length});
-    await this.syncStateResults(states,ElectionOffice.PRESIDENT,'PRESIDENT_STATES','Presidente');
-    await this.syncStateResults(states,ElectionOffice.GOVERNOR,'GOVERNOR_STATES','Governador');
+    const allStates=(await this.provider.getStates()).map(uf=>uf.toUpperCase()).filter(isProjectionTerritory),officeStates=typeof this.provider.getStatesForOffice==='function';
+    const presidentStates=(officeStates?await this.provider.getStatesForOffice(ElectionOffice.PRESIDENT):allStates).map(uf=>uf.toUpperCase()).filter(isProjectionTerritory);
+    const governorStates=(officeStates?await this.provider.getStatesForOffice(ElectionOffice.GOVERNOR):allStates).map(uf=>uf.toUpperCase()).filter(uf=>isProjectionTerritory(uf)&&uf!==EXTERIOR_UF);
+    automaticLog('Carga inicial: configuração recebida',{presidentStates:presidentStates.length,governorStates:governorStates.length});
+    await this.syncStateResults(presidentStates,ElectionOffice.PRESIDENT,'PRESIDENT_STATES','Presidente');
+    if(this.provider.round===2)await this.syncGeographicSections(presidentStates);
+    await this.syncStateResults(governorStates,ElectionOffice.GOVERNOR,'GOVERNOR_STATES','Governador');
     if(!this.state.enabled)return;
 
-    this.update({phase:'LISTING_MUNICIPALITIES',message:'Listando municípios das eleições federal e estadual…',total:states.length,completed:0,saved:0,errors:0},true);
+    const stateOffices=[...presidentStates.map(uf=>({uf,office:ElectionOffice.PRESIDENT})),...governorStates.map(uf=>({uf,office:ElectionOffice.GOVERNOR}))];
+    this.update({phase:'LISTING_MUNICIPALITIES',message:'Listando municípios das eleições federal e estadual…',total:stateOffices.length,completed:0,saved:0,errors:0},true);
     const tasks:Array<{uf:string;municipality:Municipality;office:ElectionOffice}> = [];
-    for(const uf of states){
+    for(const {uf,office} of stateOffices){
       if(!this.state.enabled)return;
-      for(const office of [ElectionOffice.PRESIDENT,ElectionOffice.GOVERNOR]){
-        try{
+      try{
           automaticLog('Listando municípios',{uf,office});
           const municipalities=await this.provider.getMunicipalities(uf,office);
           await this.dependencies.persistMunicipalities(municipalities);
           for(const municipality of municipalities)tasks.push({uf,municipality,office});
           automaticLog('Municípios persistidos',{uf,office,count:municipalities.length});
-        }catch(error){
+      }catch(error){
           this.state.errors++;
           automaticError('Falha ao listar ou persistir municípios',error,{uf,office});
-        }
       }
       this.state.completed++;
       this.state.message=`Municípios listados: ${uf}`;
@@ -105,6 +108,17 @@ export class AutomaticSyncService {
     await this.refreshNationalAndCompleteBlock(municipalFailures);
     if(!this.state.enabled)return;
     this.startPolling();
+  }
+
+  private async syncGeographicSections(states:string[]){
+    if(!this.dependencies.persistGeographic)return;
+    this.update({phase:'GEOGRAPHIC_SECTIONS',message:'Baixando inventários EA16 do 2º turno…',total:states.length,completed:0,saved:0,errors:0},true);
+    for(const uf of states){
+      if(!this.state.enabled)return;
+      try{const result=await this.provider.getEA16(uf);await this.dependencies.persistGeographic(result.sections,result.states);this.state.saved++}
+      catch(error){this.state.errors++;automaticError('EA16 falhou; resultados oficiais continuam disponíveis',error,{uf})}
+      this.state.completed++;this.publish();
+    }
   }
 
   private async syncStateResults(states:string[],office:ElectionOffice,phase:AutomaticSyncPhase,label:string){
@@ -177,6 +191,8 @@ export class AutomaticSyncService {
         federalOffices:[ElectionOffice.PRESIDENT],
         stateOffices:[ElectionOffice.GOVERNOR],
         onActivity:message=>this.update({message}),
+        collectEA16:this.provider.round===2,
+        onEA16:async result=>{await this.dependencies.persistGeographic?.(result.sections,result.states)},
       },
     );
     this.update({phase:'POLLING',message:'Aguardando novas atualizações',total:0,completed:0,saved:0,errors:0},true);

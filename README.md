@@ -19,6 +19,8 @@ A aba **Projeções** é um módulo separado, acionado manualmente. Ela lê um s
 
 O arquivo `municipios-votos-validos-2022.json`, na raiz, contém a base histórica oficial agregada dos 5.570 municípios para Presidente, Governador e Senador, por turno. A origem, regra de agregação, códigos TSE/IBGE e URLs oficiais estão registrados dentro do próprio JSON. O script reproduzível está em `scripts/build-2022-municipality-valid-votes.mjs`.
 
+A Fase 1 geográfica adiciona uma base histórica por seção do 1º turno de 2026, coleta EA16 no 2º turno e uma aba técnica **Seções**, sem alterar os motores de projeção públicos. A Fase 2 inclui um servidor SQLite estritamente local e paginado para navegar a base nacional sem carregá-la toda no navegador, além de faixas municipais estimadas por votos válidos históricos. Consulte [docs/GEOGRAPHIC_DATA.md](docs/GEOGRAPHIC_DATA.md) e [docs/GEOGRAPHIC_LOCAL_SERVER.md](docs/GEOGRAPHIC_LOCAL_SERVER.md). O swing agregado continua condicionado à observação reconciliada do segundo turno.
+
 A aba **Mapa** visualiza as projeções salvas por UF ou município. A implementação modular e as regras de associação territorial estão descritas em [docs/MAP.md](docs/MAP.md).
 
 ## Documentação complementar

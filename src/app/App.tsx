@@ -3,6 +3,7 @@ import {CandidateIdentityPanel} from '../candidates/CandidateIdentityPanel';
 import {ElectionOffice} from '../election/normalized/ElectionOffice';
 import type {NormalizedElectionResult,ResultScope} from '../election/normalized/ElectionResult';
 import {MapPage} from '../map/MapPage';
+import {GeographicDiagnosticsPage} from '../geographic/GeographicDiagnosticsPage';
 import {ProjectionPage} from '../projection/ui/ProjectionPage';
 import {AutomaticSyncService,initialAutomaticSyncState,type AutomaticSyncState} from '../services/AutomaticSyncService';
 import {AutomaticSnapshotService,chooseSnapshotDirectory,type SnapshotDirectoryHandle} from '../services/AutomaticSnapshotService';
@@ -19,7 +20,7 @@ import {DirectTSETransport} from '../tse/transport/DirectTSETransport';
 import {ScheduledTSETransport} from '../tse/transport/ScheduledTSETransport';
 import type {TSETransport} from '../tse/transport/TSETransport';
 
-type Area='OFFICIAL'|'PROJECTIONS'|'MAP'|'DEBUG';
+type Area='OFFICIAL'|'PROJECTIONS'|'MAP'|'GEOGRAPHIC'|'DEBUG';
 type Profile='2022_OFFICIAL'|'2026_SIMULATION'|'2026_OFFICIAL';
 
 export function App(){
@@ -33,25 +34,27 @@ export function App(){
     <div hidden={area!=='OFFICIAL'}><OfficialDashboard storage={storage} transport={transport}/></div>
     {area==='PROJECTIONS'&&<ProjectionPage storage={storage}/>}
     {area==='MAP'&&<MapPage storage={storage}/>}
+    {area==='GEOGRAPHIC'&&<GeographicDiagnosticsPage storage={storage}/>}
     {area==='DEBUG'&&<DebugPage storage={storage}/>}
   </main>;
 }
 
 function AreaNavigation({area,setArea}:{area:Area;setArea:(area:Area)=>void}){
   return <nav className="area-nav">{([
-    ['OFFICIAL','RESULTADO OFICIAL'],['PROJECTIONS','PROJEÇÕES'],['MAP','MAPA'],['DEBUG','DEBUG'],
+    ['OFFICIAL','RESULTADO OFICIAL'],['PROJECTIONS','PROJEÇÕES'],['MAP','MAPA'],['GEOGRAPHIC','SEÇÕES'],['DEBUG','DEBUG'],
   ] as const).map(([id,label])=><button key={id} className={area===id?'active':''} onClick={()=>setArea(id)}>{label}</button>)}</nav>;
 }
 
 function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transport:TSETransport}){
   const [profile,setProfile]=useState<Profile>('2022_OFFICIAL');
+  const [round,setRound]=useState<1|2>(1);
   const [simulationBase,setSimulationBase]=useState('https://resultados-sim.tse.jus.br/simulado');
   const provider=useMemo(()=>profile==='2022_OFFICIAL'
     ? new TSE2022Provider(transport)
     : new TSE2026Provider(transport,{
       baseUrl:profile==='2026_OFFICIAL'?'https://resultados.tse.jus.br':simulationBase,
       environment:profile==='2026_OFFICIAL'?'oficial':'simulado2026',
-    }),[profile,simulationBase,transport]);
+    },round),[profile,round,simulationBase,transport]);
   const [office,setOffice]=useState(ElectionOffice.PRESIDENT);
   const [uf,setUf]=useState('SP');
   const [scope,setScope]=useState<ResultScope>('UF');
@@ -172,6 +175,7 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
   async function persist(r:ProviderResult,display=true){
     if(display){setResult(r.normalized);setRaw(r.raw);}
     await storage.saveResult(rawRecord(r),r.normalized);
+    await storage.reconcileSectionTally(r.normalized);
     if(r.normalized.office===ElectionOffice.PRESIDENT&&r.normalized.scope==='BRASIL')setLiveOfficial(r.normalized);
     setLogs(current=>[{timestamp:r.transport.fetchedAt,url:r.transport.url,status:r.transport.status,bytes:r.transport.bytes},...current].slice(0,200));
     setCounts(await storage.count());
@@ -181,6 +185,7 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
     // URL/provider is the stable key: updates replace the current value consumed by projections and maps.
     if(r.normalized.scope==='BRASIL')automaticLog('Persistindo resultado nacional automático',{url:r.transport.url,status:r.transport.status,bytes:r.transport.bytes});
     await storage.saveResult(rawRecord(r),r.normalized);
+    await storage.reconcileSectionTally(r.normalized);
     if(r.normalized.office===ElectionOffice.PRESIDENT&&r.normalized.scope==='BRASIL')setLiveOfficial(r.normalized);
     await snapshotRef.current?.observeNational(r.normalized);
     if(r.normalized.scope==='BRASIL')automaticLog('Resultado nacional automático persistido');
@@ -234,6 +239,7 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
       persistResult:persistAutomatic,
       persistMunicipalities:list=>storage.saveMunicipalities(list),
       persistState:state=>storage.saveAutomaticSyncState(state),
+      persistGeographic:(sections,states)=>storage.mergeEA16(sections,states),
       completeSyncBlock:async municipalFailures=>{
         const directory=snapshotDirectoryRef.current;
         automaticLog('Iniciando consolidação de snapshots',{municipalFailures:municipalFailures.length,directory:directory?.name??null});
@@ -260,9 +266,10 @@ function OfficialDashboard({storage,transport}:{storage:IndexedDBStorage;transpo
       <fieldset disabled={controlsDisabled} style={{border:0,padding:0,margin:0}}>
         <div className="grid">
           <label>Provider<select value={profile} onChange={e=>setProfile(e.target.value as Profile)}><option value="2022_OFFICIAL">2022 Official</option><option value="2026_SIMULATION">2026 Simulation</option><option value="2026_OFFICIAL">2026 Official</option></select></label>
+          <label>Turno<select value={round} disabled={profile==='2022_OFFICIAL'} onChange={e=>setRound(Number(e.target.value) as 1|2)}><option value={1}>1º turno</option><option value={2}>2º turno</option></select></label>
           <label>Cargo<select value={office} onChange={e=>setOffice(e.target.value as ElectionOffice)}>{Object.values(ElectionOffice).map(value=><option key={value}>{value}</option>)}</select></label>
           <label>Abrangência<select value={scope} onChange={e=>setScope(e.target.value as ResultScope)}><option value="BRASIL">Brasil</option><option value="UF">UF</option><option value="MUNICIPALITY">Município</option></select></label>
-          <label>UF<select value={uf} disabled={scope==='BRASIL'} onChange={e=>setUf(e.target.value)}>{UFS.map(value=><option key={value}>{value}</option>)}</select></label>
+          <label>UF<select value={uf} disabled={scope==='BRASIL'} onChange={e=>setUf(e.target.value)}>{(profile==='2022_OFFICIAL'?UFS:[...UFS,'ZZ']).map(value=><option key={value} value={value}>{value==='ZZ'?'Exterior (ZZ)':value}</option>)}</select></label>
           {profile==='2026_SIMULATION'&&<label>URL do simulado<input value={simulationBase} onChange={e=>setSimulationBase(e.target.value)}/></label>}
           {scope==='MUNICIPALITY'&&<label>Município<select value={municipalityCode} onChange={e=>setMunicipalityCode(e.target.value)}><option value="">Carregue o EA12…</option>{municipalities.map(m=><option value={m.code} key={m.code}>{m.name}</option>)}</select></label>}
         </div>

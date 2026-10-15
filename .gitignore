@@ -1,10 +1,18 @@
 # Projetos externos usados apenas como referência
 /references/
 /snapshots/
-/treinamento_ia/Downloads/
+/treinamento_ia/
 *.zip
 node_modules/
 dist/
+/dist/data/
 *.tsbuildinfo
+*.pyc
+__pycache__/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+/public/data/geographic/manifest.json
+/public/data/geographic/partitions/
 .DS_Store
 prompt*.md

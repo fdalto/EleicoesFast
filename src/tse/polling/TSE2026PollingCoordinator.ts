@@ -4,12 +4,14 @@ import type {TSE2026Provider} from '../providers/TSE2026Provider';
 import {automaticError,automaticLog} from '../../services/AutomaticDebugLog';
 
 type Kind = 'federal' | 'state';
-type PollingProvider = Pick<TSE2026Provider, 'getEA14' | 'getEA15' | 'getNationalResult' | 'getStateResult' | 'getMunicipalityResult'>;
-export interface PollingCycleReport {checkedAt:string;changedStates:string[];changedMunicipalities:string[];updatedResults:number;errors:string[];municipalSnapshotReady:boolean;municipalFailures:string[]}
+type PollingProvider = Pick<TSE2026Provider, 'getEA14' | 'getEA15' | 'getNationalResult' | 'getStateResult' | 'getMunicipalityResult'> & Partial<Pick<TSE2026Provider,'getEA16'>>;
+export interface PollingCycleReport {checkedAt:string;changedStates:string[];changedMunicipalities:string[];updatedResults:number;errors:string[];geographicErrors:string[];municipalSnapshotReady:boolean;municipalFailures:string[]}
 export interface PollingCoordinatorOptions {
   federalOffices?: ElectionOffice[];
   stateOffices?: ElectionOffice[];
   onActivity?: (message:string) => void;
+  onEA16?: (result:Awaited<ReturnType<TSE2026Provider['getEA16']>>) => Promise<void> | void;
+  collectEA16?: boolean;
 }
 
 export class TSE2026PollingCoordinator {
@@ -31,7 +33,7 @@ export class TSE2026PollingCoordinator {
   }
 
   private async executeCycle(): Promise<PollingCycleReport> {
-    const report: PollingCycleReport = {checkedAt:new Date().toISOString(),changedStates:[],changedMunicipalities:[],updatedResults:0,errors:[],municipalSnapshotReady:true,municipalFailures:[]};
+    const report: PollingCycleReport = {checkedAt:new Date().toISOString(),changedStates:[],changedMunicipalities:[],updatedResults:0,errors:[],geographicErrors:[],municipalSnapshotReady:true,municipalFailures:[]};
     automaticLog('Coordenador: consultando EA14 federal e estadual',{checkedAt:report.checkedAt});
     await Promise.all((['federal', 'state'] as const).map(kind => this.monitor(kind, report)));
     automaticLog('Coordenador: ciclo concluído',{changedStates:report.changedStates.length,changedMunicipalities:report.changedMunicipalities.length,updatedResults:report.updatedResults,errors:report.errors.length});
@@ -86,6 +88,10 @@ export class TSE2026PollingCoordinator {
     )));
     automaticLog('Coordenador: resultados estaduais processados',{kind,uf,offices:offices.length,saved:saved.filter(Boolean).length});
     let complete = saved.every(Boolean);
+    if(kind==='federal'&&this.options.collectEA16&&this.provider.getEA16){
+      try{this.options.onActivity?.(`Atualização na UF ${uf}, baixando inventário EA16…`);const geographic=await this.provider.getEA16(uf);await this.options.onEA16?.(geographic)}
+      catch(error){const message=error instanceof Error?error.message:String(error);automaticError('Coordenador: EA16 indisponível; fluxo oficial continuará',error,{uf});report.geographicErrors.push(`${uf}: ${message}`)}
+    }
     try {
       const ea15 = await this.provider.getEA15(uf, kind);
       automaticLog('Coordenador: EA15 recebido',{kind,uf,municipalities:ea15.municipalities.length});

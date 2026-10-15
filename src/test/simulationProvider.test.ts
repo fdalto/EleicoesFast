@@ -17,7 +17,7 @@ function setup(){
 describe('perfil real do simulado 2026',()=>{
  it('descobre UFs pelo EA12 e consulta os três cargos sem duplicar o ambiente',async()=>{
   const {provider,urls}=setup();
-  expect(provider.id).toBe('2026_SIMULATION');
+  expect(provider.id).toBe('2026_SIMULATION_R1');
   await Promise.all([provider.discoverElection(ElectionOffice.PRESIDENT),provider.discoverElection(ElectionOffice.GOVERNOR)]);
   expect(await provider.getStates()).toEqual(['AC']);
   await provider.getNationalResult(ElectionOffice.PRESIDENT);
